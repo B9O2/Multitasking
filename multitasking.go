@@ -10,6 +10,36 @@ import (
 	"time"
 )
 
+type MTStatus int
+
+func (ms MTStatus) String() string {
+	status := ""
+	switch ms {
+	case 0:
+		status = "Not Register"
+	case 1:
+		status = "Ready"
+	case 2:
+		status = "Done"
+	case 3:
+		status = "Running"
+	case 4:
+		status = "Terminating"
+	default:
+		status = "Unknown Status"
+	}
+	return status
+}
+
+const (
+	NotRegister MTStatus = iota
+	Ready
+	Running
+	Done
+	Terminating
+	Terminated
+)
+
 type Middleware interface {
 	Run(*Multitasking, interface{}) interface{}
 }
@@ -19,7 +49,7 @@ type BaseMiddleware struct {
 	err error
 }
 
-func (bm BaseMiddleware) Run(i interface{}) interface{} {
+func (bm BaseMiddleware) Run(_ *Multitasking, i interface{}) interface{} {
 	var res interface{}
 	res, bm.err = bm.f(i)
 	return res
@@ -62,7 +92,7 @@ type Multitasking struct {
 	execwg                 sync.WaitGroup
 	ctx                    context.Context
 	cancel                 context.CancelFunc
-	status                 int //0 未注册 1 已准备好 2 已执行
+	status                 MTStatus
 	totalTask, totalResult int
 	runError               error
 	events                 []Event
@@ -84,6 +114,7 @@ func (m *Multitasking) SetResultMiddlewares(rms ...Middleware) {
 
 // Terminate 终止运行。此方法可以在任何位置调用。
 func (m *Multitasking) Terminate() {
+	m.status = Terminating
 	if m.cancel != nil {
 		m.cancel()
 	}
@@ -111,24 +142,16 @@ func (m *Multitasking) Name() string {
 	return m.name
 }
 
-func (m *Multitasking) String() string {
-	status := ""
-	switch m.status {
-	case 0:
-		status = "Not Register"
-	case 1:
-		status = "Ready"
-	case 2:
-		status = "Done"
-	default:
-		status = "Unknown Status"
-	}
+func (m *Multitasking) Status() MTStatus {
+	return m.status
+}
 
+func (m *Multitasking) String() string {
 	errText := "<nil>"
 	if m.runError != nil {
 		errText = m.runError.Error()
 	}
-	return fmt.Sprintf("\n%s(%s)\n\\_Threads: %d\n\\_Total Tasks: %d/%d\n\\_Error: %s", m.name, status, m.threads, m.totalResult, m.totalTask, errText)
+	return fmt.Sprintf("\n%s(%s)\n\\_Threads: %d\n\\_Total Tasks: %d/%d\n\\_Error: %s", m.name, m.status, m.threads, m.totalResult, m.totalTask, errText)
 }
 
 func (m *Multitasking) SetErrorCallback(ec func(*Multitasking, error) interface{}) {
@@ -164,8 +187,8 @@ func (m *Multitasking) Register(taskFunc func(*Multitasking), execFunc func(*Mul
 		ret = execFunc(m, i, ctx)
 		return
 	}
-	if m.status == 0 {
-		m.status = 1
+	if m.status == NotRegister {
+		m.status = Ready
 	}
 }
 
@@ -180,10 +203,10 @@ func (m *Multitasking) FetchError() error {
 func (m *Multitasking) Run() ([]interface{}, error) {
 	preStop := true
 
-	if m.status == 2 {
+	if m.status == Done || m.status == Terminated {
 		return nil, errors.New("Multitasking '" + m.name + "' is not be allowed to run again")
 	} else {
-		m.status = 2
+		m.status = Running
 	}
 	var result []interface{}
 	if m.taskCallback == nil || m.execCallback == nil {
@@ -236,6 +259,11 @@ func (m *Multitasking) Run() ([]interface{}, error) {
 	}
 	close(m.resultChan)
 	<-stop
+	if m.status == Terminating {
+		m.status = Terminated
+	} else {
+		m.status = Done
+	}
 	return result, nil
 }
 
