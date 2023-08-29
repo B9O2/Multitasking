@@ -12,6 +12,11 @@ import (
 	"time"
 )
 
+type Task struct {
+	isRetry bool
+	data    any
+}
+
 type MTStatus int
 
 func (ms MTStatus) String() string {
@@ -61,10 +66,11 @@ type Multitasking struct {
 	//channel
 	taskQueue   chan interface{}
 	retryQueue  *chanx.UnboundedChan[any]
-	bufferQueue chan interface{}
+	bufferQueue chan Task
 	resultChan  chan interface{}
 
 	//control
+	taskwg sync.WaitGroup //raw task (not retrying-task)
 	execwg sync.WaitGroup
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -212,6 +218,8 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 		m.taskCallback()
 		m.Log(-2, "[-] task distribute closed")
 		close(closeGate)
+		m.taskwg.Wait()
+		close(m.retryQueue.In)
 	}() //启动任务分发线程
 	m.Log(-2, "[+] task distribute started")
 
@@ -235,14 +243,20 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 		for loop {
 			select {
 			case task := <-m.retryQueue.Out:
-				m.bufferQueue <- task
+				m.bufferQueue <- Task{true, task}
 				m.totalRetry += 1
 				//m.totalTask += 1
 			case task := <-m.taskQueue:
-				m.bufferQueue <- task
+				m.taskwg.Add(1)
+				m.bufferQueue <- Task{false, task}
+
 			case <-closeGate:
 				loop = false
 			}
+		}
+		for task := range m.retryQueue.Out {
+			m.bufferQueue <- Task{true, task}
+			m.totalRetry += 1
 		}
 		preStop = false
 		close(m.bufferQueue)
@@ -267,7 +281,12 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 					break
 				}
 				var ret interface{}
-				ret = m.execCallback(task)
+				ret = m.execCallback(task.data)
+
+				if !task.isRetry {
+					m.taskwg.Done()
+				}
+
 				m.resultChan <- ret
 			}
 		}(i)
@@ -309,7 +328,7 @@ func newMultitasking(name string, inherit *Multitasking) *Multitasking {
 		name:        name,
 		taskQueue:   make(chan interface{}),
 		retryQueue:  chanx.NewUnboundedChan[any](1),
-		bufferQueue: make(chan interface{}),
+		bufferQueue: make(chan Task),
 		resultChan:  make(chan interface{}),
 		execwg:      sync.WaitGroup{},
 		shield:      Shield.NewShield(),

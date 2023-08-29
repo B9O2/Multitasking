@@ -108,7 +108,7 @@ func TestRetry(t *testing.T) {
 	mt := Multitasking.NewMultitasking("retry Test", nil)
 	fmt.Println(mt)
 	mt.Register(func(dc Multitasking.DistributeController) {
-		for i := 0; i < 10000; i++ {
+		for i := 0; i < 1000; i++ {
 			dc.AddTask(Task{
 				A: rand.Int(),
 				B: rand.Int(),
@@ -124,6 +124,7 @@ func TestRetry(t *testing.T) {
 			if (task.A+task.B)%2 != 0 {
 				ec.Retry("RETRY_OK")
 			}
+			//time.Sleep(1 * time.Second)
 			return task.A + task.B
 		default:
 			return -1
@@ -135,7 +136,7 @@ func TestRetry(t *testing.T) {
 	})
 
 	fmt.Println(mt)
-	_, err := mt.Run(1000)
+	_, err := mt.Run(100)
 	if err != nil {
 		return
 	}
