@@ -22,9 +22,9 @@ func (ms MTStatus) String() string {
 	case 1:
 		status = "Ready"
 	case 2:
-		status = "Done"
-	case 3:
 		status = "Running"
+	case 3:
+		status = "Done"
 	case 4:
 		status = "Terminating"
 	case 5:
@@ -46,8 +46,7 @@ const (
 
 type Multitasking struct {
 	//property
-	name    string
-	threads int
+	name string
 
 	//callback
 	taskCallback      func()
@@ -139,7 +138,7 @@ func (m *Multitasking) String() string {
 	if m.runError != nil {
 		errText = m.runError.Error()
 	}
-	return fmt.Sprintf("\n%s(%s)\n\\_Threads: %d\n\\_Total Tasks: %d/%d(Retry: %d MaxRetryWaiting: %d)\n\\_Error: %s", m.name, m.status, m.threads, m.totalResult, m.totalTask, m.totalRetry, m.maxRetryBlock, errText)
+	return fmt.Sprintf("\n%s(%s)\n\\_Total Tasks: %d/%d(Retry: %d MaxRetryWaiting: %d)\n\\_Error: %s", m.name, m.status, m.totalResult, m.totalTask, m.totalRetry, m.maxRetryBlock, errText)
 }
 
 func (m *Multitasking) SetErrorCallback(ec func(ExecuteController, error) any) {
@@ -192,7 +191,10 @@ func (m *Multitasking) FetchError() error {
 	return m.runError
 }
 
-func (m *Multitasking) Run() ([]interface{}, error) {
+func (m *Multitasking) Run(threads int) ([]interface{}, error) {
+	if threads <= 0 {
+		return nil, errors.New("threads should be grant than 0")
+	}
 	preStop := true
 	closeGate := make(chan byte)
 
@@ -247,7 +249,7 @@ func (m *Multitasking) Run() ([]interface{}, error) {
 	}() //Gate
 	m.Log(-2, "[+] task gate started")
 
-	for i := 0; i < m.threads; { //启动任务执行线程
+	for i := 0; i < threads; { //启动任务执行线程
 		m.execwg.Add(1)
 		go func(tid int) {
 			goon := true
@@ -302,13 +304,9 @@ func (m *Multitasking) Run() ([]interface{}, error) {
 	return result, nil
 }
 
-func newMultitasking(name string, threads int) *Multitasking {
-	if threads <= 0 {
-		threads = 1
-	}
+func newMultitasking(name string, inherit *Multitasking) *Multitasking {
 	mt := &Multitasking{
 		name:        name,
-		threads:     threads,
 		taskQueue:   make(chan interface{}),
 		retryQueue:  chanx.NewUnboundedChan[any](1),
 		bufferQueue: make(chan interface{}),
@@ -316,9 +314,13 @@ func newMultitasking(name string, threads int) *Multitasking {
 		execwg:      sync.WaitGroup{},
 		shield:      Shield.NewShield(),
 	}
-	mt.SetController(&BaseDistributeController{
-		NewBaseController(mt),
-	})
+	dc := &BaseDistributeController{
+		BaseController: NewBaseController(mt),
+	}
+	if inherit != nil {
+		dc.inheritDC = inherit.dc
+	}
+	mt.SetController(dc)
 	mt.SetController(&BaseExecuteController{
 		NewBaseController(mt),
 	})
@@ -326,29 +328,29 @@ func newMultitasking(name string, threads int) *Multitasking {
 }
 
 // NewMultitasking 实例化一个多线程管理实例。如果需要嵌套，此实例应处于最上层。
-func NewMultitasking(name string, threads int) *Multitasking {
-	lrm := newMultitasking(name, threads)
+func NewMultitasking(name string, inherit *Multitasking) *Multitasking {
+	lrm := newMultitasking(name, inherit)
 	lrm.ctx, lrm.cancel = context.WithCancel(context.Background())
 	return lrm
 }
 
 // NewMultitaskingWithContext 带有上下文(Context)的实例化方法。
-func NewMultitaskingWithContext(name string, threads int, ctx context.Context) *Multitasking {
-	lrm := newMultitasking(name, threads)
+func NewMultitaskingWithContext(name string, inherit *Multitasking, ctx context.Context) *Multitasking {
+	lrm := newMultitasking(name, inherit)
 	lrm.ctx, lrm.cancel = context.WithCancel(ctx)
 	return lrm
 }
 
 // NewMultitaskingWithDeadline 带有自动停止时间的实例化方法。
-func NewMultitaskingWithDeadline(name string, threads int, t time.Time) *Multitasking {
-	lrm := newMultitasking(name, threads)
+func NewMultitaskingWithDeadline(name string, inherit *Multitasking, t time.Time) *Multitasking {
+	lrm := newMultitasking(name, inherit)
 	lrm.ctx, lrm.cancel = context.WithDeadline(context.Background(), t)
 	return lrm
 }
 
 // NewMultitaskingWithTimeout 带有超时自动停止的实例化方法。
-func NewMultitaskingWithTimeout(name string, threads int, d time.Duration) *Multitasking {
-	lrm := newMultitasking(name, threads)
+func NewMultitaskingWithTimeout(name string, inherit *Multitasking, d time.Duration) *Multitasking {
+	lrm := newMultitasking(name, inherit)
 	lrm.ctx, lrm.cancel = context.WithTimeout(context.Background(), d)
 	return lrm
 }

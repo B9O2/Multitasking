@@ -15,7 +15,7 @@ func TestMultitasking(t *testing.T) {
 	type Task struct {
 		A, B int
 	}
-	mt := Multitasking.NewMultitasking("Test", 2)
+	mt := Multitasking.NewMultitasking("Test", nil)
 	fmt.Println(mt)
 	mt.Register(func(dc Multitasking.DistributeController) {
 		for i := 0; i < 4; i++ {
@@ -39,7 +39,7 @@ func TestMultitasking(t *testing.T) {
 	})
 
 	fmt.Println(mt)
-	run, err := mt.Run()
+	run, err := mt.Run(1000)
 	if err != nil {
 		return
 	}
@@ -56,7 +56,7 @@ func TestMultitaskingContext(t *testing.T) {
 	type Task struct {
 		A, B, I int
 	}
-	mt := Multitasking.NewMultitasking("Test", 400)
+	mt := Multitasking.NewMultitasking("Test", nil)
 	fmt.Println(mt)
 	mt.Register(func(dc Multitasking.DistributeController) {
 		final := 0
@@ -89,7 +89,7 @@ func TestMultitaskingContext(t *testing.T) {
 
 	fmt.Println(mt)
 
-	_, err := mt.Run()
+	_, err := mt.Run(1000)
 	if err != nil {
 		return
 	}
@@ -105,7 +105,7 @@ func TestRetry(t *testing.T) {
 	type Task struct {
 		A, B int
 	}
-	mt := Multitasking.NewMultitasking("retry Test", 100)
+	mt := Multitasking.NewMultitasking("retry Test", nil)
 	fmt.Println(mt)
 	mt.Register(func(dc Multitasking.DistributeController) {
 		for i := 0; i < 10000; i++ {
@@ -135,7 +135,7 @@ func TestRetry(t *testing.T) {
 	})
 
 	fmt.Println(mt)
-	_, err := mt.Run()
+	_, err := mt.Run(1000)
 	if err != nil {
 		return
 	}

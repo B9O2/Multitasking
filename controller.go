@@ -13,6 +13,7 @@ type DistributeController interface {
 	Controller
 	AddTask(any)
 	AddTasks(...any)
+	InheritDC() DistributeController
 }
 
 type ExecuteController interface {
@@ -51,6 +52,11 @@ func NewBaseController(mt *Multitasking) *BaseController {
 // BaseDistributeController 基础的任务分发控制器
 type BaseDistributeController struct {
 	*BaseController
+	inheritDC DistributeController
+}
+
+func (bdc *BaseDistributeController) InheritDC() DistributeController {
+	return bdc.inheritDC
 }
 
 func (bdc *BaseDistributeController) AddTask(task any) {
