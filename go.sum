@@ -1,2 +1,6 @@
 github.com/B9O2/NStruct v0.0.2 h1:reprI4axYEqQUqGRgZYqEfs9tDzf0zBut+6+OXua5MQ=
 github.com/B9O2/NStruct v0.0.2/go.mod h1:TVZrZDBRE5A4rxtbffXG9raXz7rG9kL0Qwv2YMkv5es=
+github.com/B9O2/NStruct v0.0.3 h1:bfSDCFLG30e8W5rmfTJDyuMhciyiYM3/pdUAD21IkfQ=
+github.com/B9O2/NStruct v0.0.3/go.mod h1:n39Dq+nLHIt8Fsua8CxxyyVGk/C7Xeoqow9MAdKR13U=
+github.com/smallnest/chanx v1.1.0 h1:2f/anv7jUuFqeOvCRy4ApmVixWcYUz1ya0vpVx6P7vQ=
+github.com/smallnest/chanx v1.1.0/go.mod h1:zXoLoNTSzdRiD+XNNsfAj6/jY7ZfBnviL96tVr+tQ3E=
