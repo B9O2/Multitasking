@@ -315,15 +315,13 @@ func newMultitasking(name string, inherit *Multitasking) *Multitasking {
 		shield:      Shield.NewShield(),
 	}
 	dc := &BaseDistributeController{
-		BaseController: NewBaseController(mt),
+		NewBaseController(mt, inherit),
 	}
-	if inherit != nil {
-		dc.inheritDC = inherit.dc
+	ec := &BaseExecuteController{
+		NewBaseController(mt, inherit),
 	}
 	mt.SetController(dc)
-	mt.SetController(&BaseExecuteController{
-		NewBaseController(mt),
-	})
+	mt.SetController(ec)
 	return mt
 }
 

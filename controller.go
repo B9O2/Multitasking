@@ -7,13 +7,13 @@ type Controller interface {
 	Status() MTStatus
 	Protect(f func() error) error
 	Name() string
+	InheritDC() DistributeController
 }
 
 type DistributeController interface {
 	Controller
 	AddTask(any)
 	AddTasks(...any)
-	InheritDC() DistributeController
 }
 
 type ExecuteController interface {
@@ -24,7 +24,8 @@ type ExecuteController interface {
 
 // BaseController 基础控制器，其他控制器都应当继承自此控制器
 type BaseController struct {
-	mt *Multitasking
+	mt      *Multitasking
+	inherit *Multitasking
 }
 
 func (bc *BaseController) Status() MTStatus {
@@ -43,20 +44,24 @@ func (bc *BaseController) Protect(f func() error) error {
 	return bc.mt.protect(f)
 }
 
-func NewBaseController(mt *Multitasking) *BaseController {
+func (bc *BaseController) InheritDC() DistributeController {
+	if bc.inherit != nil {
+		return bc.inherit.dc
+	} else {
+		return nil
+	}
+}
+
+func NewBaseController(mt, inherit *Multitasking) *BaseController {
 	return &BaseController{
-		mt: mt,
+		mt:      mt,
+		inherit: inherit,
 	}
 }
 
 // BaseDistributeController 基础的任务分发控制器
 type BaseDistributeController struct {
 	*BaseController
-	inheritDC DistributeController
-}
-
-func (bdc *BaseDistributeController) InheritDC() DistributeController {
-	return bdc.inheritDC
 }
 
 func (bdc *BaseDistributeController) AddTask(task any) {
