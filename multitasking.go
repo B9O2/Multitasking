@@ -249,7 +249,6 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 			case task := <-m.taskQueue:
 				m.taskwg.Add(1)
 				m.bufferQueue <- Task{false, task}
-
 			case <-closeGate:
 				loop = false
 			}
@@ -272,6 +271,7 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 				m.Log(-1, fmt.Sprintf("[-] task execute closed (%d)", tid))
 			}()
 			for task := range m.bufferQueue {
+				m.Log(-1, fmt.Sprintf("[>]DC: task.data: %v", task))
 				select {
 				case <-m.ctx.Done():
 					goon = false
