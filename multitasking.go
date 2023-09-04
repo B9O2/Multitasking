@@ -57,7 +57,7 @@ type Multitasking struct {
 	taskCallback      func()
 	execCallback      func(interface{}) interface{}
 	resultMiddlewares []Middleware
-	errCallback       func(ExecuteController, error) interface{}
+	errCallback       func(Controller, error) interface{}
 
 	//controller
 	dc DistributeController
@@ -78,7 +78,6 @@ type Multitasking struct {
 	//statics
 	status                                            MTStatus
 	totalRetry, totalTask, totalResult, maxRetryBlock uint
-	runError                                          error
 	events                                            []Event
 
 	//extra
@@ -140,15 +139,11 @@ func (m *Multitasking) Name() string {
 }
 
 func (m *Multitasking) String() string {
-	errText := "<nil>"
-	if m.runError != nil {
-		errText = m.runError.Error()
-	}
-	return fmt.Sprintf("\n%s(%s)\n\\_Total Tasks: %d/%d(Retry: %d MaxRetryWaiting: %d)\n\\_Error: %s", m.name, m.status, m.totalResult, m.totalTask, m.totalRetry, m.maxRetryBlock, errText)
+	return fmt.Sprintf("\n%s(%s)\n\\_Total Tasks: %d/%d(Retry: %d MaxRetryWaiting: %d)\n", m.name, m.status, m.totalResult, m.totalTask, m.totalRetry, m.maxRetryBlock)
 }
 
-func (m *Multitasking) SetErrorCallback(ec func(ExecuteController, error) any) {
-	m.errCallback = ec
+func (m *Multitasking) SetErrorCallback(callback func(Controller, error) any) {
+	m.errCallback = callback
 }
 
 func (m *Multitasking) SetController(c Controller) {
@@ -166,7 +161,7 @@ func (m *Multitasking) Register(taskFunc func(DistributeController), execFunc fu
 	m.taskCallback = func() {
 		defer func() {
 			if r := recover(); r != nil {
-				m.runError = errors.New(fmt.Sprintf("%v", r))
+				m.errCallback(m.dc, r.(error))
 			}
 		}()
 		taskFunc(m.dc)
@@ -191,10 +186,6 @@ func (m *Multitasking) Register(taskFunc func(DistributeController), execFunc fu
 
 func (m *Multitasking) protect(f func() error) error {
 	return m.shield.Protect(f)
-}
-
-func (m *Multitasking) FetchError() error {
-	return m.runError
 }
 
 func (m *Multitasking) Run(threads int) ([]interface{}, error) {
@@ -234,7 +225,6 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 					m.Log(-2, "[-] task gate closed (Terminate)")
 				} else {
 					m.Log(-2, fmt.Sprintf("[-] task gate closed (err:%s)", err))
-					m.runError = errors.New(err)
 				}
 			} else {
 				m.Log(-2, "[-] task gate closed")
@@ -301,7 +291,14 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 	go func() { //启动执行结果收集线程
 		for r := range m.resultChan {
 			for _, rm := range m.resultMiddlewares {
-				r = rm.Run(m.ec, r)
+				func() {
+					defer func() {
+						if rec := recover(); rec != nil {
+							r = m.errCallback(m.ec, rec.(error))
+						}
+					}()
+					r = rm.Run(m.ec, r)
+				}()
 			}
 			result = append(result, r)
 			m.totalResult += 1

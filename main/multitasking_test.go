@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/B9O2/Multitasking"
 	"math/rand"
@@ -33,7 +34,7 @@ func TestMultitasking(t *testing.T) {
 		})
 		return task.A + task.B
 	})
-	mt.SetErrorCallback(func(ec Multitasking.ExecuteController, err error) any {
+	mt.SetErrorCallback(func(ec Multitasking.Controller, err error) any {
 		fmt.Println(err)
 		return 1004
 	})
@@ -113,6 +114,7 @@ func TestRetry(t *testing.T) {
 				A: rand.Int(),
 				B: rand.Int(),
 			})
+
 		}
 	}, func(ec Multitasking.ExecuteController, i interface{}) interface{} {
 		switch i.(type) {
@@ -123,6 +125,7 @@ func TestRetry(t *testing.T) {
 			mt.Log(1, "测试日志"+time.Now().String())
 			if (task.A+task.B)%2 != 0 {
 				ec.Retry("RETRY_OK")
+
 			}
 			//time.Sleep(1 * time.Second)
 			return task.A + task.B
@@ -130,8 +133,19 @@ func TestRetry(t *testing.T) {
 			return -1
 		}
 	})
-	mt.SetErrorCallback(func(ec Multitasking.ExecuteController, err error) interface{} {
-		fmt.Println("EXEC:", err)
+	mt.SetResultMiddlewares(Multitasking.NewBaseMiddleware(func(i interface{}) (interface{}, error) {
+		panic(errors.New(fmt.Sprintf("panic <%v>", i)))
+	}))
+
+	mt.SetErrorCallback(func(ctrl Multitasking.Controller, err error) interface{} {
+		switch ctrl.(type) {
+		case Multitasking.ExecuteController:
+			fmt.Println("Execute:", err)
+		case Multitasking.DistributeController:
+			fmt.Println("Distribute:", err)
+		default:
+			fmt.Println("Unknown Controller:", err)
+		}
 		return nil
 	})
 
