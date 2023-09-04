@@ -202,7 +202,8 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 		return nil, errors.New("threads should be grant than 0")
 	}
 	preStop := true
-	closeGate := make(chan byte)
+	closeGatePlease := make(chan byte)
+	closeGateOK := make(chan byte)
 
 	if m.status == Done || m.status == Terminated {
 		return nil, errors.New("Multitasking '" + m.name + "' is not be allowed to run again")
@@ -217,7 +218,8 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 	go func() {
 		m.taskCallback()
 		m.Log(-2, "[-] task distribute closed")
-		close(closeGate)
+		close(closeGatePlease)
+		<-closeGateOK
 		m.taskwg.Wait()
 		close(m.retryQueue.In)
 	}() //启动任务分发线程
@@ -249,8 +251,9 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 			case task := <-m.taskQueue:
 				m.taskwg.Add(1)
 				m.bufferQueue <- Task{false, task}
-			case <-closeGate:
+			case <-closeGatePlease:
 				loop = false
+				close(closeGateOK)
 			}
 		}
 		for task := range m.retryQueue.Out {
