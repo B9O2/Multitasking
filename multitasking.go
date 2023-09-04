@@ -309,7 +309,6 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 	m.Log(-2, "[+] result collector started")
 
 	m.execwg.Wait()
-	close(m.taskQueue)
 	if preStop {
 		close(m.bufferQueue)
 	}

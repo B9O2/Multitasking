@@ -1,6 +1,8 @@
-github.com/B9O2/NStruct v0.0.2 h1:reprI4axYEqQUqGRgZYqEfs9tDzf0zBut+6+OXua5MQ=
-github.com/B9O2/NStruct v0.0.2/go.mod h1:TVZrZDBRE5A4rxtbffXG9raXz7rG9kL0Qwv2YMkv5es=
 github.com/B9O2/NStruct v0.0.3 h1:bfSDCFLG30e8W5rmfTJDyuMhciyiYM3/pdUAD21IkfQ=
 github.com/B9O2/NStruct v0.0.3/go.mod h1:n39Dq+nLHIt8Fsua8CxxyyVGk/C7Xeoqow9MAdKR13U=
+github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
+github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/smallnest/chanx v1.1.0 h1:2f/anv7jUuFqeOvCRy4ApmVixWcYUz1ya0vpVx6P7vQ=
 github.com/smallnest/chanx v1.1.0/go.mod h1:zXoLoNTSzdRiD+XNNsfAj6/jY7ZfBnviL96tVr+tQ3E=
+github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
+gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c h1:dUUwHk2QECo/6vqA44rthZ8ie2QXMNeKRTHCNY2nXvo=
