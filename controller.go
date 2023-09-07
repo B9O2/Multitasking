@@ -33,7 +33,7 @@ func (bc *BaseController) Status() MTStatus {
 }
 
 func (bc *BaseController) Terminate() {
-	bc.mt.terminate()
+	bc.mt.Terminate()
 }
 
 func (bc *BaseController) Name() string {

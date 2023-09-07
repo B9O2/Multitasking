@@ -108,8 +108,8 @@ func (m *Multitasking) SetResultMiddlewares(rms ...Middleware) {
 	}
 }
 
-// terminate 终止运行。此方法可以在任何位置调用。
-func (m *Multitasking) terminate() {
+// Terminate 终止运行。此方法可以在任何位置调用。
+func (m *Multitasking) Terminate() {
 	m.status = Terminating
 	if m.cancel != nil {
 		m.cancel()
