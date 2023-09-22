@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/B9O2/Multitasking"
 	"math/rand"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -53,54 +52,54 @@ func TestMultitasking(t *testing.T) {
 
 }
 
-func TestMultitaskingContext(t *testing.T) {
-	type Task struct {
-		A, B, I int
-	}
-	mt := Multitasking.NewMultitasking("Test", nil)
-	fmt.Println(mt)
-	mt.Register(func(dc Multitasking.DistributeController) {
-		final := 0
-		for i := 0; i < 10000; i++ {
-			dc.AddTask(Task{
-				A: rand.Int(),
-				B: rand.Int(),
-				I: i,
-			})
-			if i > 1000 {
-				dc.Terminate()
-			}
-			final += 1
+// ------------------------------示例-----------------------------------------//
+type Task struct {
+	A, B, I int
+}
 
-		}
-		mt.Log(1, "Final: "+strconv.Itoa(final))
-	}, func(ec Multitasking.ExecuteController, i interface{}) interface{} {
-		task := i.(Task)
-		//mt.Log(1, "测试日志"+time.Now().String())
-		ec.Protect(func() error {
-			m[task.A+task.B] = false
-			return nil
+func GenNumbers(dc Multitasking.DistributeController) {
+	final := 0
+	for i := 0; i < 10000; i++ {
+		dc.AddTask(Task{
+			A: rand.Int(),
+			B: rand.Int(),
+			I: i,
 		})
-		if task.I > 1000 {
-			ec.Terminate()
+		if i > 1000 {
+			dc.Terminate()
 		}
-		return task.A + task.B
+		final += 1
+	}
+}
+
+func HandleNumber(ec Multitasking.ExecuteController, i interface{}) interface{} {
+	task := i.(Task)
+	//mt.Log(1, "测试日志"+time.Now().String())
+	ec.Protect(func() error {
+		m[task.A+task.B] = false
+		return nil
 	})
+	if task.I > 1000 {
+		ec.Terminate()
+	}
+	return task.A + task.B
+}
+
+func TestMultitaskingContext(t *testing.T) {
+	mt := Multitasking.NewMultitasking("Test", nil)
+	mt.Register(GenNumbers, HandleNumber)
 	mt.SetResultMiddlewares()
-
-	fmt.Println(mt)
-
 	_, err := mt.Run(1000)
 	if err != nil {
-		return
+		fmt.Println(err)
 	}
-
 	fmt.Println(mt)
 	for _, event := range mt.Events(-2) {
 		fmt.Println(event)
 	}
 }
 
+// -----------------------------------------------------------------//
 func TestRetry(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 	type Task struct {
@@ -133,7 +132,7 @@ func TestRetry(t *testing.T) {
 			return -1
 		}
 	})
-	mt.SetResultMiddlewares(Multitasking.NewBaseMiddleware(func(i interface{}) (interface{}, error) {
+	mt.SetResultMiddlewares(Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
 		panic(errors.New(fmt.Sprintf("panic <%v>", i)))
 	}))
 

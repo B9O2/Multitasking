@@ -5,13 +5,13 @@ type Middleware interface {
 }
 
 type BaseMiddleware struct {
-	f   func(interface{}) (interface{}, error)
+	f   func(ExecuteController, interface{}) (interface{}, error)
 	err error
 }
 
-func (bm BaseMiddleware) Run(_ ExecuteController, i interface{}) interface{} {
+func (bm BaseMiddleware) Run(ec ExecuteController, i interface{}) interface{} {
 	var res interface{}
-	res, bm.err = bm.f(i)
+	res, bm.err = bm.f(ec, i)
 	return res
 }
 
@@ -20,7 +20,7 @@ func (bm BaseMiddleware) Error() error {
 }
 
 // NewBaseMiddleware 实例化一个基础的Middleware
-func NewBaseMiddleware(f func(interface{}) (interface{}, error)) *BaseMiddleware {
+func NewBaseMiddleware(f func(ExecuteController, interface{}) (interface{}, error)) *BaseMiddleware {
 	return &BaseMiddleware{
 		f: f,
 	}
