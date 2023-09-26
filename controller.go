@@ -1,6 +1,8 @@
 package Multitasking
 
-import "context"
+import (
+	"context"
+)
 
 type Controller interface {
 	Terminate()
@@ -18,7 +20,7 @@ type DistributeController interface {
 
 type ExecuteController interface {
 	Controller
-	Retry(any)
+	Retry(...any) RetryResult
 	Context() context.Context
 }
 
@@ -79,8 +81,10 @@ type BaseExecuteController struct {
 	*BaseController
 }
 
-func (bec *BaseExecuteController) Retry(task any) {
-	bec.mt.retry(task)
+func (bec *BaseExecuteController) Retry(tasks ...any) RetryResult {
+	return RetryResult{
+		tasks: tasks,
+	}
 }
 
 func (bec *BaseExecuteController) Context() context.Context {

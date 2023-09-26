@@ -1,10 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"github.com/B9O2/Multitasking"
 	"math/rand"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -113,28 +113,20 @@ func TestRetry(t *testing.T) {
 				A: rand.Int(),
 				B: rand.Int(),
 			})
-
 		}
 	}, func(ec Multitasking.ExecuteController, i interface{}) interface{} {
 		switch i.(type) {
 		case string:
 			return 1004
 		case Task:
-			task := i.(Task)
 			mt.Log(1, "测试日志"+time.Now().String())
-			if (task.A+task.B)%2 != 0 {
-				ec.Retry("RETRY_OK")
-
-			}
 			//time.Sleep(1 * time.Second)
-			return task.A + task.B
+			return ec.Retry("hello")
 		default:
+			fmt.Println(reflect.TypeOf(i), i)
 			return -1
 		}
 	})
-	mt.SetResultMiddlewares(Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
-		panic(errors.New(fmt.Sprintf("panic <%v>", i)))
-	}))
 
 	mt.SetErrorCallback(func(ctrl Multitasking.Controller, err error) interface{} {
 		switch ctrl.(type) {
@@ -149,7 +141,7 @@ func TestRetry(t *testing.T) {
 	})
 
 	fmt.Println(mt)
-	_, err := mt.Run(100)
+	run, err := mt.Run(100)
 	if err != nil {
 		return
 	}
@@ -158,7 +150,7 @@ func TestRetry(t *testing.T) {
 	for _, event := range mt.Events(-2) {
 		fmt.Println(event)
 	}
-	//fmt.Println(run)
+	fmt.Println(run)
 
 	/*
 		for _, event := range mt.Events(1) {

@@ -12,6 +12,36 @@ import (
 	"time"
 )
 
+type Result interface {
+	RawTask() Task
+}
+
+type RetryResult struct {
+	rawTask Task
+	tasks   []any
+}
+
+func (rr RetryResult) RawTask() Task {
+	return rr.rawTask
+}
+
+func (rr RetryResult) Tasks() []any {
+	return rr.tasks
+}
+
+type NormalResult struct {
+	rawTask Task
+	data    any
+}
+
+func (nr NormalResult) RawTask() Task {
+	return nr.rawTask
+}
+
+func (nr NormalResult) Data() any {
+	return nr.data
+}
+
 type Task struct {
 	isRetry bool
 	data    any
@@ -70,10 +100,12 @@ type Multitasking struct {
 	resultChan  chan interface{}
 
 	//control
-	taskwg sync.WaitGroup //raw task (not retrying-task)
-	execwg sync.WaitGroup
-	ctx    context.Context
-	cancel context.CancelFunc
+	retryIndex int
+	retrywg    sync.WaitGroup
+	taskwg     sync.WaitGroup //raw task (not retrying-task)
+	execwg     sync.WaitGroup
+	ctx        context.Context
+	cancel     context.CancelFunc
 
 	//statics
 	status                                            MTStatus
@@ -211,7 +243,8 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 		m.Log(-2, "[-] task distribute closed")
 		close(closeGatePlease)
 		<-closeGateOK
-		m.taskwg.Wait()
+		m.taskwg.Wait() //确保全部初始任务执行完毕
+		m.retrywg.Wait()
 		close(m.retryQueue.In)
 	}() //启动任务分发线程
 	m.Log(-2, "[+] task distribute started")
@@ -246,6 +279,7 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 				close(closeGateOK)
 			}
 		}
+
 		for task := range m.retryQueue.Out {
 			m.bufferQueue <- Task{true, task}
 			m.totalRetry += 1
@@ -273,11 +307,21 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 				if !goon {
 					break
 				}
-				var ret interface{}
-				ret = m.execCallback(task.data)
 
-				if !task.isRetry {
-					m.taskwg.Done()
+				ret := m.execCallback(task.data)
+
+				//根据返回类型的不同处理
+				if rt, ok := ret.(RetryResult); ok {
+					rt.rawTask = task
+					if len(rt.tasks) <= 0 {
+						rt.tasks = []any{task.data}
+					}
+					ret = rt
+				} else {
+					ret = NormalResult{
+						rawTask: task,
+						data:    ret,
+					}
 				}
 
 				m.resultChan <- ret
@@ -289,19 +333,42 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 
 	stop := make(chan struct{})
 	go func() { //启动执行结果收集线程
-		for r := range m.resultChan {
-			for _, rm := range m.resultMiddlewares {
-				func() {
-					defer func() {
-						if rec := recover(); rec != nil {
-							r = m.errCallback(m.ec, rec.(error))
-						}
+		for ret := range m.resultChan {
+			switch ret.(type) {
+			case RetryResult:
+				rt := ret.(RetryResult)
+				for _, rTask := range rt.Tasks() {
+					m.retry(rTask)
+				}
+				if !rt.RawTask().isRetry {
+					//非递归重试任务
+					m.retrywg.Add(len(rt.tasks))
+					//m.retryIndex += len(rt.tasks)
+				}
+			case NormalResult:
+				rt := ret.(NormalResult)
+				if rt.RawTask().isRetry {
+					m.retrywg.Done()
+					//m.retryIndex -= 1
+					//fmt.Println(m.retryIndex)
+				}
+				r := rt.Data()
+				for _, rm := range m.resultMiddlewares {
+					func() {
+						defer func() {
+							if rec := recover(); rec != nil {
+								r = m.errCallback(m.ec, rec.(error))
+							}
+						}()
+						r = rm.Run(m.ec, r)
 					}()
-					r = rm.Run(m.ec, r)
-				}()
+				}
+				result = append(result, r)
+				m.totalResult += 1
 			}
-			result = append(result, r)
-			m.totalResult += 1
+			if !ret.(Result).RawTask().isRetry {
+				m.taskwg.Done()
+			}
 		}
 		close(stop)
 		m.Log(-2, "[-] result collector closed")
