@@ -393,7 +393,7 @@ func newMultitasking(name string, inherit *Multitasking) *Multitasking {
 	mt := &Multitasking{
 		name:        name,
 		taskQueue:   make(chan interface{}),
-		retryQueue:  chanx.NewUnboundedChan[any](1),
+		retryQueue:  chanx.NewUnboundedChan[any](context.Background(), 1),
 		bufferQueue: make(chan Task),
 		resultChan:  make(chan interface{}),
 		execwg:      sync.WaitGroup{},
