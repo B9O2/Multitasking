@@ -216,7 +216,7 @@ func (m *Multitasking) Register(taskFunc func(DistributeController), execFunc fu
 	}
 }
 
-func (m *Multitasking) protect(f func() error) error {
+func (m *Multitasking) protect(f func()) error {
 	return m.shield.Protect(f)
 }
 

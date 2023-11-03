@@ -27,9 +27,8 @@ func TestMultitasking(t *testing.T) {
 	}, func(ec Multitasking.ExecuteController, i interface{}) interface{} {
 		task := i.(Task)
 		mt.Log(1, "测试日志"+time.Now().String())
-		ec.Protect(func() error {
+		ec.Protect(func() {
 			m[task.A+task.B] = false
-			return nil
 		})
 		return task.A + task.B
 	})
@@ -75,9 +74,8 @@ func GenNumbers(dc Multitasking.DistributeController) {
 func HandleNumber(ec Multitasking.ExecuteController, i interface{}) interface{} {
 	task := i.(Task)
 	//mt.Log(1, "测试日志"+time.Now().String())
-	ec.Protect(func() error {
+	ec.Protect(func() {
 		m[task.A+task.B] = false
-		return nil
 	})
 	if task.I > 1000 {
 		ec.Terminate()
@@ -115,13 +113,21 @@ func TestRetry(t *testing.T) {
 			})
 		}
 	}, func(ec Multitasking.ExecuteController, i interface{}) interface{} {
+		task := i.(Task)
 		switch i.(type) {
 		case string:
 			return 1004
 		case Task:
 			mt.Log(1, "测试日志"+time.Now().String())
 			//time.Sleep(1 * time.Second)
-			return ec.Retry("hello")
+			if (task.A+task.B)%2 == 0 {
+				return task.A + task.B
+			} else {
+				return ec.Retry(Task{
+					A: rand.Int(),
+					B: rand.Int(),
+				})
+			}
 		default:
 			fmt.Println(reflect.TypeOf(i), i)
 			return -1
@@ -150,6 +156,7 @@ func TestRetry(t *testing.T) {
 	for _, event := range mt.Events(-2) {
 		fmt.Println(event)
 	}
+
 	fmt.Println(run)
 
 	/*

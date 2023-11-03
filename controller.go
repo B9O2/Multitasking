@@ -7,7 +7,7 @@ import (
 type Controller interface {
 	Terminate()
 	Status() MTStatus
-	Protect(f func() error) error
+	Protect(f func()) error
 	Name() string
 	InheritDC() DistributeController
 }
@@ -21,6 +21,11 @@ type DistributeController interface {
 type ExecuteController interface {
 	Controller
 	Retry(...any) RetryResult
+	Context() context.Context
+}
+
+type MiddlewareController interface {
+	Controller
 	Context() context.Context
 }
 
@@ -42,7 +47,7 @@ func (bc *BaseController) Name() string {
 	return bc.mt.Name()
 }
 
-func (bc *BaseController) Protect(f func() error) error {
+func (bc *BaseController) Protect(f func()) error {
 	return bc.mt.protect(f)
 }
 
