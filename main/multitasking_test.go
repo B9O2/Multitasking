@@ -11,6 +11,10 @@ import (
 
 var m = map[int]bool{}
 
+func TestFastTask(t *testing.T) {
+
+}
+
 func TestMultitasking(t *testing.T) {
 	type Task struct {
 		A, B int

@@ -220,6 +220,10 @@ func (m *Multitasking) protect(f func()) error {
 	return m.shield.Protect(f)
 }
 
+func (m *Multitasking) Close() {
+	m.shield.Close()
+}
+
 func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 	if threads <= 0 {
 		return nil, errors.New("threads should be grant than 0")
