@@ -52,6 +52,7 @@ func TestMultitasking(t *testing.T) {
 	for _, event := range mt.Events(-2) {
 		fmt.Println(event)
 	}
+	mt.Close()
 
 }
 
