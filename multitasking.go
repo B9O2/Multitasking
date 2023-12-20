@@ -81,7 +81,8 @@ const (
 
 type Multitasking struct {
 	//property
-	name string
+	name  string
+	debug bool
 
 	//callback
 	taskCallback      func()
@@ -149,6 +150,10 @@ func (m *Multitasking) Terminate() {
 }
 
 func (m *Multitasking) Log(level int, text string) {
+	if m.debug {
+		fmt.Println(text)
+	}
+
 	m.events = append(m.events, Event{
 		Level: level,
 		Text:  text,
@@ -393,9 +398,10 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 	return result, nil
 }
 
-func newMultitasking(name string, inherit *Multitasking) *Multitasking {
+func newMultitasking(name string, inherit *Multitasking, debug bool) *Multitasking {
 	mt := &Multitasking{
 		name:        name,
+		debug:       debug,
 		taskQueue:   make(chan interface{}),
 		retryQueue:  chanx.NewUnboundedChan[any](context.Background(), 1),
 		bufferQueue: make(chan Task),
@@ -416,28 +422,28 @@ func newMultitasking(name string, inherit *Multitasking) *Multitasking {
 
 // NewMultitasking 实例化一个多线程管理实例。如果需要嵌套，此实例应处于最上层。
 func NewMultitasking(name string, inherit *Multitasking) *Multitasking {
-	lrm := newMultitasking(name, inherit)
+	lrm := newMultitasking(name, inherit, false)
 	lrm.ctx, lrm.cancel = context.WithCancel(context.Background())
 	return lrm
 }
 
 // NewMultitaskingWithContext 带有上下文(Context)的实例化方法。
 func NewMultitaskingWithContext(name string, inherit *Multitasking, ctx context.Context) *Multitasking {
-	lrm := newMultitasking(name, inherit)
+	lrm := newMultitasking(name, inherit, false)
 	lrm.ctx, lrm.cancel = context.WithCancel(ctx)
 	return lrm
 }
 
 // NewMultitaskingWithDeadline 带有自动停止时间的实例化方法。
 func NewMultitaskingWithDeadline(name string, inherit *Multitasking, t time.Time) *Multitasking {
-	lrm := newMultitasking(name, inherit)
+	lrm := newMultitasking(name, inherit, false)
 	lrm.ctx, lrm.cancel = context.WithDeadline(context.Background(), t)
 	return lrm
 }
 
 // NewMultitaskingWithTimeout 带有超时自动停止的实例化方法。
 func NewMultitaskingWithTimeout(name string, inherit *Multitasking, d time.Duration) *Multitasking {
-	lrm := newMultitasking(name, inherit)
+	lrm := newMultitasking(name, inherit, false)
 	lrm.ctx, lrm.cancel = context.WithTimeout(context.Background(), d)
 	return lrm
 }

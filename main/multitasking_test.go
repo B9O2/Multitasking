@@ -92,7 +92,7 @@ func TestMultitaskingContext(t *testing.T) {
 	mt := Multitasking.NewMultitasking("Test", nil)
 	mt.Register(GenNumbers, HandleNumber)
 	mt.SetResultMiddlewares()
-	_, err := mt.Run(1000)
+	_, err := mt.Run(200)
 	if err != nil {
 		fmt.Println(err)
 	}

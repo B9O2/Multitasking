@@ -9,6 +9,7 @@ type Controller interface {
 	Status() MTStatus
 	Protect(f func()) error
 	Name() string
+	Debug(bool)
 	InheritDC() DistributeController
 }
 
@@ -49,6 +50,10 @@ func (bc *BaseController) Name() string {
 
 func (bc *BaseController) Protect(f func()) error {
 	return bc.mt.protect(f)
+}
+
+func (bc *BaseController) Debug(d bool) {
+	bc.mt.debug = d
 }
 
 func (bc *BaseController) InheritDC() DistributeController {
