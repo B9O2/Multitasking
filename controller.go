@@ -1,9 +1,5 @@
 package Multitasking
 
-import (
-	"context"
-)
-
 type Controller interface {
 	Terminate()
 	Status() MTStatus
@@ -22,12 +18,10 @@ type DistributeController interface {
 type ExecuteController interface {
 	Controller
 	Retry(...any) RetryResult
-	Context() context.Context
 }
 
 type MiddlewareController interface {
 	Controller
-	Context() context.Context
 }
 
 // BaseController 基础控制器，其他控制器都应当继承自此控制器
@@ -38,10 +32,6 @@ type BaseController struct {
 
 func (bc *BaseController) Status() MTStatus {
 	return bc.mt.status
-}
-
-func (bc *BaseController) Terminate() {
-	bc.mt.Terminate()
 }
 
 func (bc *BaseController) Name() string {
@@ -82,8 +72,13 @@ func (bdc *BaseDistributeController) AddTask(task any) {
 
 func (bdc *BaseDistributeController) AddTasks(tasks ...any) {
 	for _, task := range tasks {
-		bdc.mt.addTask(task)
+		bdc.AddTask(task)
 	}
+}
+
+func (bdc *BaseDistributeController) Terminate() {
+	//fmt.Println("TERMINATED")
+	panic("multitasking terminated")
 }
 
 // BaseExecuteController 基础的任务执行控制器
@@ -97,6 +92,14 @@ func (bec *BaseExecuteController) Retry(tasks ...any) RetryResult {
 	}
 }
 
-func (bec *BaseExecuteController) Context() context.Context {
-	return bec.mt.ctx
+func (bec *BaseExecuteController) Terminate() {
+	defer func() {
+		if r := recover(); r != nil {
+			//fmt.Println("Terminate:", r)
+		}
+	}()
+
+	TryClose(bec.mt.taskQueue)
+	//TryClose(bec.mt.retryQueue.In)
+
 }

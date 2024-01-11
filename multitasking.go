@@ -7,12 +7,12 @@ import (
 	"github.com/B9O2/NStruct/Shield"
 	"github.com/smallnest/chanx"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 )
 
 type Result interface {
+	IsRetry() bool
 	RawTask() Task
 }
 
@@ -29,6 +29,10 @@ func (rr RetryResult) Tasks() []any {
 	return rr.tasks
 }
 
+func (rr RetryResult) IsRetry() bool {
+	return true
+}
+
 type NormalResult struct {
 	rawTask Task
 	data    any
@@ -40,6 +44,10 @@ func (nr NormalResult) RawTask() Task {
 
 func (nr NormalResult) Data() any {
 	return nr.data
+}
+
+func (nr NormalResult) IsRetry() bool {
+	return false
 }
 
 type Task struct {
@@ -85,42 +93,34 @@ type Multitasking struct {
 	debug bool
 
 	//callback
-	taskCallback      func()
-	execCallback      func(interface{}) interface{}
+	taskCallback      func(DistributeController)
+	execCallback      func(ExecuteController, interface{}) interface{}
 	resultMiddlewares []Middleware
-	errCallback       func(Controller, error) interface{}
+	errCallback       func(Controller, error)
+
+	//channel
+	taskQueue  chan interface{}
+	retryQueue *chanx.UnboundedChan[any]
 
 	//controller
 	dc DistributeController
 	ec ExecuteController
 
-	//channel
-	taskQueue   chan interface{}
-	retryQueue  *chanx.UnboundedChan[any]
-	bufferQueue chan Task
-	resultChan  chan interface{}
-
 	//control
 	retryIndex int
-	retrywg    sync.WaitGroup
-	taskwg     sync.WaitGroup //raw task (not retrying-task)
-	execwg     sync.WaitGroup
-	ctx        context.Context
-	cancel     context.CancelFunc
 
 	//statics
-	status                                            MTStatus
-	totalRetry, totalTask, totalResult, maxRetryBlock uint
-	events                                            []Event
+	status                                MTStatus
+	maxRetryBlock, totalResult, totalTask uint
+	events                                []Event
 
 	//extra
 	shield *Shield.Shield
 }
 
-// addTask 增加任务。此方法应当在任务分发函数中调用。(在任务执行过程中调用将导致死锁)
+// addTask 增加任务。此方法应当在任务分发函数中调用。
 func (m *Multitasking) addTask(taskInfo interface{}) {
 	m.taskQueue <- taskInfo
-	m.totalTask += 1
 
 	//m.Log(-2, "Join task successfully")
 }
@@ -138,14 +138,6 @@ func (m *Multitasking) retry(taskInfo interface{}) {
 func (m *Multitasking) SetResultMiddlewares(rms ...Middleware) {
 	for _, rm := range rms {
 		m.resultMiddlewares = append(m.resultMiddlewares, rm)
-	}
-}
-
-// Terminate 终止运行。此方法可以在任何位置调用。
-func (m *Multitasking) Terminate() {
-	m.status = Terminating
-	if m.cancel != nil {
-		m.cancel()
 	}
 }
 
@@ -176,46 +168,30 @@ func (m *Multitasking) Name() string {
 }
 
 func (m *Multitasking) String() string {
-	return fmt.Sprintf("\n%s(%s)\n\\_Total Tasks: %d/%d(Retry: %d MaxRetryWaiting: %d)\n", m.name, m.status, m.totalResult, m.totalTask, m.totalRetry, m.maxRetryBlock)
+	//return fmt.Sprintf("\n%s(%s)\n\\_Total Tasks: %d/%d(Retry: %d MaxRetryWaiting: %d)\n", m.name, m.status, m.totalResult, m.totalTask, m.totalRetry, m.maxRetryBlock)
+	return m.name
 }
 
-func (m *Multitasking) SetErrorCallback(callback func(Controller, error) any) {
+func (m *Multitasking) SetErrorCallback(callback func(Controller, error)) {
 	m.errCallback = callback
 }
 
-func (m *Multitasking) SetController(c Controller) {
-	switch c.(type) {
+func (m *Multitasking) SetController(ctrl Controller) {
+	switch c := ctrl.(type) {
 	case DistributeController:
-		m.dc = c.(DistributeController)
+		m.dc = c
 	case ExecuteController:
-		m.ec = c.(ExecuteController)
+		m.ec = c
 	default:
+
 		m.Log(-2, fmt.Sprintf("unknown controller type '%s'", reflect.TypeOf(c).String()))
 	}
 }
 
 func (m *Multitasking) Register(taskFunc func(DistributeController), execFunc func(ExecuteController, any) any) {
-	m.taskCallback = func() {
-		defer func() {
-			if r := recover(); r != nil {
-				m.errCallback(m.dc, r.(error))
-			}
-		}()
-		taskFunc(m.dc)
-		return
-	}
+	m.taskCallback = taskFunc
+	m.execCallback = execFunc
 
-	m.execCallback = func(i interface{}) (ret interface{}) {
-		defer func() {
-			if r := recover(); r != nil {
-				if m.errCallback != nil {
-					ret = m.errCallback(m.ec, r.(error))
-				}
-			}
-		}()
-		ret = execFunc(m.ec, i)
-		return
-	}
 	if m.status == NotRegister {
 		m.status = Ready
 	}
@@ -225,99 +201,79 @@ func (m *Multitasking) protect(f func()) error {
 	return m.shield.Protect(f)
 }
 
-func (m *Multitasking) Close() {
-	m.shield.Close()
-}
+func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interface{}, err error) {
+	terminateErrorIgnore := []string{"multitasking terminated", "send on closed channel"}
+	w := NewWaiter()
+	m.shield = Shield.NewShield()
 
-func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 	if threads <= 0 {
 		return nil, errors.New("threads should be grant than 0")
 	}
-	preStop := true
-	closeGatePlease := make(chan byte)
-	closeGateOK := make(chan byte)
 
-	if m.status == Done || m.status == Terminated {
-		return nil, errors.New("Multitasking '" + m.name + "' is not be allowed to run again")
-	} else {
-		m.status = Running
-	}
-	var result []interface{}
-	if m.taskCallback == nil || m.execCallback == nil {
-		return nil, errors.New("Multitasking '" + m.name + "' must be registered")
-	}
+	//control
+	bufferQueue := make(chan Task)
+	resultQueue := make(chan interface{})
+	totalTaskWg := &sync.WaitGroup{}
+	totalExecWg := &sync.WaitGroup{}
+	m.taskQueue = make(chan interface{})
+	m.retryQueue = chanx.NewUnboundedChan[any](context.Background(), 1)
 
-	go func() {
-		m.taskCallback()
-		m.Log(-2, "[-] task distribute closed")
-		close(closeGatePlease)
-		<-closeGateOK
-		m.taskwg.Wait() //确保全部初始任务执行完毕
-		m.retrywg.Wait()
-		close(m.retryQueue.In)
-	}() //启动任务分发线程
-	m.Log(-2, "[+] task distribute started")
+	//static
+	totalRetry := 0
+	m.totalTask = 0
+	m.totalResult = 0
 
-	go func() {
-		loop := true
+	//Distribution
+	go Try(func() {
 		defer func() {
-			if r := recover(); r != nil {
-				err := fmt.Sprintf("%v", r)
-				if strings.Contains(err, "send on closed channel") {
-					m.Log(-2, "[-] task gate closed (Terminate)")
-				} else {
-					m.Log(-2, fmt.Sprintf("[-] task gate closed (err:%s)", err))
-				}
-			} else {
-				m.Log(-2, "[-] task gate closed")
-			}
-			//Terminated
+			TryClose(m.taskQueue)
+			w.Wait("SchedulingGate") //确保task里的都被加入到BufferQueue再结束
 		}()
+		m.taskCallback(m.dc)
+	}, func(msg string) {
+		m.errCallback(m.dc, errors.New(msg))
+	}, terminateErrorIgnore)
 
-		for loop {
+	//SchedulingGate
+	go Try(func() {
+		retryWorking := true
+		taskWorking := true
+		for retryWorking || taskWorking {
 			select {
-			case task := <-m.retryQueue.Out:
-				m.bufferQueue <- Task{true, task}
-				m.totalRetry += 1
-				//m.totalTask += 1
-			case task := <-m.taskQueue:
-				m.taskwg.Add(1)
-				m.bufferQueue <- Task{false, task}
-			case <-closeGatePlease:
-				loop = false
-				close(closeGateOK)
+			case task, ok := <-m.retryQueue.Out:
+				if ok {
+					bufferQueue <- Task{true, task}
+					totalRetry += 1
+				} else {
+					retryWorking = false
+				}
+			case task, ok := <-m.taskQueue:
+				if ok {
+					totalTaskWg.Add(1)
+					bufferQueue <- Task{false, task}
+				} else if taskWorking {
+					w.Done("SchedulingGate") //确保totalTaskWg的Add在Wait之前完成
+					taskWorking = false
+				}
 			}
 		}
+	}, func(msg string) {
+		m.errCallback(m.dc, errors.New(msg))
+	}, terminateErrorIgnore)
 
-		for task := range m.retryQueue.Out {
-			m.bufferQueue <- Task{true, task}
-			m.totalRetry += 1
-		}
-		preStop = false
-		close(m.bufferQueue)
-	}() //Gate
-	m.Log(-2, "[+] task gate started")
-
-	for i := 0; i < threads; { //启动任务执行线程
-		m.execwg.Add(1)
-		go func(tid int) {
-			goon := true
+	//Execution
+	for tid := uint(0); tid < threads; {
+		exid := tid
+		totalExecWg.Add(1)
+		go Try(func() {
 			defer func() {
-				m.execwg.Done()
-				m.Log(-1, fmt.Sprintf("[-] task execute closed (%d)", tid))
+				totalExecWg.Done()
+				m.Log(-1, fmt.Sprintf("[-] task execute closed (%d)", exid))
 			}()
-			for task := range m.bufferQueue {
+			for task := range bufferQueue {
 				m.Log(-1, fmt.Sprintf("[>]DC: task.data: %v", task))
-				select {
-				case <-m.ctx.Done():
-					goon = false
-				default:
-				}
-				if !goon {
-					break
-				}
 
-				ret := m.execCallback(task.data)
+				ret := m.execCallback(m.ec, task.data)
 
 				//根据返回类型的不同处理
 				if rt, ok := ret.(RetryResult); ok {
@@ -332,82 +288,68 @@ func (m *Multitasking) Run(threads int) ([]interface{}, error) {
 						data:    ret,
 					}
 				}
-
-				m.resultChan <- ret
+				resultQueue <- ret
 			}
-		}(i)
-		m.Log(-1, fmt.Sprintf("[+] task execute started (%d)", i))
-		i += 1
+		}, func(msg string) {
+			m.errCallback(m.ec, errors.New(msg))
+
+		}, terminateErrorIgnore)
+
+		m.Log(-1, fmt.Sprintf("[+] task execute started (%d)", exid))
+		tid += 1
 	}
 
-	stop := make(chan struct{})
-	go func() { //启动执行结果收集线程
-		for ret := range m.resultChan {
-			switch ret.(type) {
+	//Result
+	go Try(func() {
+		for ret := range resultQueue {
+			switch rt := ret.(type) {
 			case RetryResult:
-				rt := ret.(RetryResult)
 				for _, rTask := range rt.Tasks() {
 					m.retry(rTask)
 				}
-				if !rt.RawTask().isRetry {
-					//非递归重试任务
-					m.retrywg.Add(len(rt.tasks))
-					//m.retryIndex += len(rt.tasks)
-				}
 			case NormalResult:
-				rt := ret.(NormalResult)
-				if rt.RawTask().isRetry {
-					m.retrywg.Done()
-					//m.retryIndex -= 1
-					//fmt.Println(m.retryIndex)
-				}
+				m.totalResult += 1
+				totalTaskWg.Done()
 				r := rt.Data()
 				for _, rm := range m.resultMiddlewares {
-					func() {
-						defer func() {
-							if rec := recover(); rec != nil {
-								r = m.errCallback(m.ec, rec.(error))
-							}
-						}()
+					Try(func() {
 						r = rm.Run(m.ec, r)
-					}()
+					}, func(s string) {
+						m.errCallback(m.ec, errors.New(s))
+						r = nil
+					}, nil)
 				}
 				result = append(result, r)
-				m.totalResult += 1
-			}
-			if !ret.(Result).RawTask().isRetry {
-				m.taskwg.Done()
 			}
 		}
-		close(stop)
 		m.Log(-2, "[-] result collector closed")
-	}()
-	m.Log(-2, "[+] result collector started")
+	}, func(msg string) {
+		m.errCallback(m.ec, errors.New(msg))
+	}, terminateErrorIgnore)
 
-	m.execwg.Wait()
-	if preStop {
-		close(m.bufferQueue)
-	}
-	close(m.resultChan)
-	<-stop
-	if m.status == Terminating {
-		m.status = Terminated
-	} else {
-		m.status = Done
-	}
+	w.WaitAll(1)
+	totalTaskWg.Wait()
+	m.Log(-2, "[*]All Task Done")
+	TryClose(m.retryQueue.In)
+	m.Log(-2, "[*]Retry Closed")
+	TryClose(bufferQueue)
+	m.Log(-2, "[*]BufferQueue Closed")
+	m.ec.Terminate()
+	m.Log(-2, "[*]EC Terminated")
+	totalExecWg.Wait()
+	m.Log(-2, "[*]Total Task Done")
+	w.Close()
+	m.shield.Close()
+	close(resultQueue)
+	m.Log(-2, "[*]ResultQueue Closed")
+
 	return result, nil
 }
 
 func newMultitasking(name string, inherit *Multitasking, debug bool) *Multitasking {
 	mt := &Multitasking{
-		name:        name,
-		debug:       debug,
-		taskQueue:   make(chan interface{}),
-		retryQueue:  chanx.NewUnboundedChan[any](context.Background(), 1),
-		bufferQueue: make(chan Task),
-		resultChan:  make(chan interface{}),
-		execwg:      sync.WaitGroup{},
-		shield:      Shield.NewShield(),
+		name:  name,
+		debug: debug,
 	}
 	dc := &BaseDistributeController{
 		NewBaseController(mt, inherit),
@@ -415,35 +357,17 @@ func newMultitasking(name string, inherit *Multitasking, debug bool) *Multitaski
 	ec := &BaseExecuteController{
 		NewBaseController(mt, inherit),
 	}
+
 	mt.SetController(dc)
 	mt.SetController(ec)
+	mt.SetErrorCallback(func(c Controller, err error) {
+		mt.Log(0, reflect.TypeOf(c).Name()+":"+err.Error())
+	})
 	return mt
 }
 
 // NewMultitasking 实例化一个多线程管理实例。如果需要嵌套，此实例应处于最上层。
 func NewMultitasking(name string, inherit *Multitasking) *Multitasking {
 	lrm := newMultitasking(name, inherit, false)
-	lrm.ctx, lrm.cancel = context.WithCancel(context.Background())
-	return lrm
-}
-
-// NewMultitaskingWithContext 带有上下文(Context)的实例化方法。
-func NewMultitaskingWithContext(name string, inherit *Multitasking, ctx context.Context) *Multitasking {
-	lrm := newMultitasking(name, inherit, false)
-	lrm.ctx, lrm.cancel = context.WithCancel(ctx)
-	return lrm
-}
-
-// NewMultitaskingWithDeadline 带有自动停止时间的实例化方法。
-func NewMultitaskingWithDeadline(name string, inherit *Multitasking, t time.Time) *Multitasking {
-	lrm := newMultitasking(name, inherit, false)
-	lrm.ctx, lrm.cancel = context.WithDeadline(context.Background(), t)
-	return lrm
-}
-
-// NewMultitaskingWithTimeout 带有超时自动停止的实例化方法。
-func NewMultitaskingWithTimeout(name string, inherit *Multitasking, d time.Duration) *Multitasking {
-	lrm := newMultitasking(name, inherit, false)
-	lrm.ctx, lrm.cancel = context.WithTimeout(context.Background(), d)
 	return lrm
 }

@@ -1,67 +1,46 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/B9O2/Multitasking"
 	"math/rand"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
 
-var m = map[int]bool{}
-
-func TestFastTask(t *testing.T) {
-
-}
-
-func TestMultitasking(t *testing.T) {
-	type Task struct {
-		A, B int
-	}
-	mt := Multitasking.NewMultitasking("Test", nil)
-	fmt.Println(mt)
-	mt.Register(func(dc Multitasking.DistributeController) {
-		for i := 0; i < 4; i++ {
-			dc.AddTask(Task{
-				A: rand.Int(),
-				B: rand.Int(),
-			})
-		}
-	}, func(ec Multitasking.ExecuteController, i interface{}) interface{} {
-		task := i.(Task)
-		mt.Log(1, "测试日志"+time.Now().String())
-		ec.Protect(func() {
-			m[task.A+task.B] = false
-		})
-		return task.A + task.B
-	})
-	mt.SetErrorCallback(func(ec Multitasking.Controller, err error) any {
-		fmt.Println(err)
-		return 1004
-	})
-
-	fmt.Println(mt)
-	run, err := mt.Run(1000)
-	if err != nil {
-		return
-	}
-	fmt.Println(mt)
-	fmt.Println("Result: ", run)
-
-	for _, event := range mt.Events(-2) {
-		fmt.Println(event)
-	}
-	mt.Close()
-
-}
-
-// ------------------------------示例-----------------------------------------//
 type Task struct {
 	A, B, I int
 }
 
+var m = map[int]bool{}
+
+func FastTasks(dc Multitasking.DistributeController) {
+	for i := 0; i < 40; i++ {
+		dc.AddTask(Task{
+			A: rand.Int(),
+			B: rand.Int(),
+		})
+	}
+}
+
 func GenNumbers(dc Multitasking.DistributeController) {
+	//dc.Debug(true)
+	final := 0
+	for i := 0; i < 10000; i++ {
+		dc.AddTask(Task{
+			A: rand.Int(),
+			B: rand.Int(),
+			I: i,
+		})
+		final += 1
+	}
+}
+
+func GenNumbersTerminate(dc Multitasking.DistributeController) {
+	//dc.Debug(true)
 	final := 0
 	for i := 0; i < 10000; i++ {
 		dc.AddTask(Task{
@@ -73,6 +52,27 @@ func GenNumbers(dc Multitasking.DistributeController) {
 			dc.Terminate()
 		}
 		final += 1
+	}
+}
+
+func AddNumber(ec Multitasking.ExecuteController, i interface{}) interface{} {
+	task := i.(Task)
+	return task.A + task.B
+}
+
+func RetryNumber(ec Multitasking.ExecuteController, i interface{}) interface{} {
+	task := i.(Task)
+	//mt.Log(1, "测试日志"+time.Now().String())
+	ec.Protect(func() {
+		m[task.A+task.B] = false
+	})
+
+	q := task.A + task.B
+	if q%2 == 0 {
+		return q
+	} else {
+		task.B += 1
+		return ec.Retry(task)
 	}
 }
 
@@ -88,11 +88,81 @@ func HandleNumber(ec Multitasking.ExecuteController, i interface{}) interface{} 
 	return task.A + task.B
 }
 
+func TestMultitasking(t *testing.T) {
+	baseRoutine := runtime.NumGoroutine()
+	mt := Multitasking.NewMultitasking("Test", nil)
+	tests := []struct {
+		name         string
+		distribution func(dc Multitasking.DistributeController)
+		exec         func(ec Multitasking.ExecuteController, i interface{}) interface{}
+		middlewares  []Multitasking.Middleware
+		threads      uint
+	}{
+		{
+			name:         "Normal",
+			distribution: GenNumbers,
+			exec:         AddNumber,
+			threads:      200,
+		},
+		{
+			name:         "Fast Terminate",
+			distribution: FastTasks,
+			exec:         AddNumber,
+			middlewares: []Multitasking.Middleware{
+				Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
+					ec.Terminate()
+					return i, nil
+				}),
+			},
+			threads: 20,
+		},
+		{
+			name:         "Retry",
+			distribution: GenNumbers,
+			exec:         RetryNumber,
+			middlewares: []Multitasking.Middleware{
+				Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
+					//ec.Terminate()
+					return i, nil
+				}),
+			},
+			threads: 20,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt.Register(tt.distribution, tt.exec)
+			mt.SetResultMiddlewares(tt.middlewares...)
+			res, err := mt.Run(context.Background(), tt.threads)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println(res)
+			fmt.Println(mt)
+			//buf := make([]byte, 10240)
+			//n := runtime.Stack(buf, true)
+			//fmt.Println(string(buf[:n]))
+		})
+	}
+	goroutines := make([]byte, 1<<20)
+	length := runtime.Stack(goroutines, true)
+
+	finishRoutine := runtime.NumGoroutine()
+	fmt.Printf("Total goroutines: %d\n", finishRoutine)
+	fmt.Println(string(goroutines[:length]))
+	if baseRoutine != finishRoutine {
+		panic(fmt.Sprintf("Routine Error:%d->%d", baseRoutine, finishRoutine))
+	}
+}
+
+// ------------------------------示例-----------------------------------------//
+
 func TestMultitaskingContext(t *testing.T) {
 	mt := Multitasking.NewMultitasking("Test", nil)
 	mt.Register(GenNumbers, HandleNumber)
 	mt.SetResultMiddlewares()
-	_, err := mt.Run(200)
+	_, err := mt.Run(context.Background(), 200)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -152,7 +222,7 @@ func TestRetry(t *testing.T) {
 	})
 
 	fmt.Println(mt)
-	run, err := mt.Run(100)
+	run, err := mt.Run(context.Background(), 100)
 	if err != nil {
 		return
 	}
