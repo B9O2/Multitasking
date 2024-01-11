@@ -18,9 +18,6 @@ type Waiter struct {
 }
 
 func (w *Waiter) Done(name string) {
-	defer func() {
-		recover()
-	}()
 	w.s.Protect(func() {
 		for _, p := range w.waiters {
 			if _, ok := p.conditions[name]; ok {
@@ -42,15 +39,15 @@ func (w *Waiter) Wait(conditions ...string) {
 	proc.wg.Add(len(conditions))
 
 	conditionsMap := map[string]struct{}{}
-	for _, condition := range conditions {
-		conditionsMap[condition] = struct{}{}
-		if _, done := w.waiterDone[condition]; done {
-			proc.wg.Done()
-		}
-	}
-	proc.conditions = conditionsMap
-
 	w.s.Protect(func() {
+		for _, condition := range conditions {
+			conditionsMap[condition] = struct{}{}
+			if _, done := w.waiterDone[condition]; done {
+				proc.wg.Done()
+			}
+		}
+		proc.conditions = conditionsMap
+
 		w.waiters = append(w.waiters, proc)
 	})
 

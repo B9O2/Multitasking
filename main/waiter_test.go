@@ -19,7 +19,7 @@ func TestWaiter(t *testing.T) {
 
 	go func() {
 		fmt.Println("[-] 2Seconds Running")
-		time.Sleep(2 * time.Second)
+		time.Sleep(1 * time.Second)
 		fmt.Println("[*] 2Seconds done.Waiting...")
 		w.Done("2Seconds")
 		fmt.Println("[*] 2Seconds OK")
