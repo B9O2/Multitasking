@@ -2,7 +2,6 @@ package Multitasking
 
 type Controller interface {
 	Terminate()
-	Status() MTStatus
 	Protect(f func()) error
 	Name() string
 	Debug(bool)
@@ -28,10 +27,6 @@ type MiddlewareController interface {
 type BaseController struct {
 	mt      *Multitasking
 	inherit *Multitasking
-}
-
-func (bc *BaseController) Status() MTStatus {
-	return bc.mt.status
 }
 
 func (bc *BaseController) Name() string {

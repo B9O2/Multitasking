@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/B9O2/Multitasking"
 	"math/rand"
 	"reflect"
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/B9O2/Multitasking"
 )
 
 type Task struct {
@@ -135,6 +136,18 @@ func TestMultitasking(t *testing.T) {
 			},
 			threads: 20,
 		},
+		{
+			name:         "Slow Middleware",
+			distribution: GenNumbers,
+			exec:         RetryNumber,
+			middlewares: []Multitasking.Middleware{
+				Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
+					time.Sleep(1 * time.Second)
+					return i, nil
+				}),
+			},
+			threads: 20,
+		},
 	}
 
 	for _, tt := range tests {
@@ -156,13 +169,15 @@ func TestMultitasking(t *testing.T) {
 		})
 	}
 	goroutines := make([]byte, 1<<20)
-	length := runtime.Stack(goroutines, true)
+	_ = runtime.Stack(goroutines, true)
 
 	finishRoutine := runtime.NumGoroutine()
 	fmt.Printf("Total goroutines: %d\n", finishRoutine)
-	fmt.Println(string(goroutines[:length]))
+	//fmt.Println(string(goroutines[:length]))
 	if baseRoutine != finishRoutine {
-		//panic(fmt.Sprintf("Routine Error:%d->%d", baseRoutine, finishRoutine))
+		panic(fmt.Sprintf("Routine Error:%d->%d", baseRoutine, finishRoutine))
+	} else {
+		fmt.Println("Routines OK")
 	}
 }
 

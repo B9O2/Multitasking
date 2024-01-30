@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/B9O2/NStruct/Shield"
-	"github.com/smallnest/chanx"
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/B9O2/NStruct/Shield"
+	"github.com/smallnest/chanx"
 )
 
 type Result interface {
@@ -55,38 +56,6 @@ type Task struct {
 	data    any
 }
 
-type MTStatus int
-
-func (ms MTStatus) String() string {
-	status := ""
-	switch ms {
-	case 0:
-		status = "Not Register"
-	case 1:
-		status = "Ready"
-	case 2:
-		status = "Running"
-	case 3:
-		status = "Done"
-	case 4:
-		status = "Terminating"
-	case 5:
-		status = "Terminated"
-	default:
-		status = "Unknown Status"
-	}
-	return status
-}
-
-const (
-	NotRegister MTStatus = iota
-	Ready
-	Running
-	Done
-	Terminating
-	Terminated
-)
-
 type Multitasking struct {
 	//property
 	name  string
@@ -110,7 +79,6 @@ type Multitasking struct {
 	retryIndex int
 
 	//statics
-	status                                MTStatus
 	maxRetryBlock, totalResult, totalTask uint
 	events                                []Event
 
@@ -191,10 +159,6 @@ func (m *Multitasking) SetController(ctrl Controller) {
 func (m *Multitasking) Register(taskFunc func(DistributeController), execFunc func(ExecuteController, any) any) {
 	m.taskCallback = taskFunc
 	m.execCallback = execFunc
-
-	if m.status == NotRegister {
-		m.status = Ready
-	}
 }
 
 func (m *Multitasking) protect(f func()) error {
@@ -203,18 +167,18 @@ func (m *Multitasking) protect(f func()) error {
 
 func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interface{}, err error) {
 	terminateErrorIgnore := []string{"multitasking terminated", "send on closed channel"}
-	w := NewWaiter()
 	m.shield = Shield.NewShield()
-
 	if threads <= 0 {
 		return nil, errors.New("threads should be grant than 0")
 	}
 
 	//control
+	sgw := NewWaiter() //Scheduling Gate Waiter
 	bufferQueue := make(chan Task)
 	resultQueue := make(chan interface{})
 	totalTaskWg := &sync.WaitGroup{}
 	totalExecWg := &sync.WaitGroup{}
+	resultWg := &sync.WaitGroup{}
 	m.taskQueue = make(chan interface{})
 	m.retryQueue = chanx.NewUnboundedChan[any](context.Background(), 1)
 
@@ -227,7 +191,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 	go Try(func() {
 		defer func() {
 			TryClose(m.taskQueue)
-			w.Wait("SchedulingGate") //确保task里的都被加入到BufferQueue再结束
+			sgw.Wait("SchedulingGate") //确保task里的都被加入到BufferQueue再结束
 		}()
 		m.taskCallback(m.dc)
 	}, func(msg string) {
@@ -252,7 +216,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 					totalTaskWg.Add(1)
 					bufferQueue <- Task{false, task}
 				} else if taskWorking {
-					w.Done("SchedulingGate") //确保totalTaskWg的Add在Wait之前完成
+					sgw.Done("SchedulingGate") //确保totalTaskWg的Add在Wait之前完成
 					taskWorking = false
 				}
 			}
@@ -300,7 +264,11 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 	}
 
 	//Result
+	resultWg.Add(1)
 	go Try(func() {
+		defer func() {
+			resultWg.Done()
+		}()
 		for ret := range resultQueue {
 			switch rt := ret.(type) {
 			case RetryResult:
@@ -327,7 +295,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 		m.errCallback(m.ec, errors.New(msg))
 	}, terminateErrorIgnore)
 
-	w.WaitAll(1)
+	sgw.WaitAll(1)
 	totalTaskWg.Wait()
 	m.Log(-2, "[*]All Task Done")
 	TryClose(m.retryQueue.In)
@@ -338,9 +306,11 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 	m.Log(-2, "[*]EC Terminated")
 	totalExecWg.Wait()
 	m.Log(-2, "[*]Total Task Done")
-	w.Close()
+	sgw.Close()
 	m.shield.Close()
 	close(resultQueue)
+	m.Log(-2, "[-]Waiting ResultQueue Close")
+	resultWg.Wait()
 	m.Log(-2, "[*]ResultQueue Closed")
 
 	return result, nil
