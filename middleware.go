@@ -9,13 +9,13 @@ type BaseMiddleware struct {
 	err error
 }
 
-func (bm BaseMiddleware) Run(ec ExecuteController, i interface{}) interface{} {
+func (bm *BaseMiddleware) Run(ec ExecuteController, i interface{}) interface{} {
 	var res interface{}
 	res, bm.err = bm.f(ec, i)
 	return res
 }
 
-func (bm BaseMiddleware) Error() error {
+func (bm *BaseMiddleware) Error() error {
 	return bm.err
 }
 
