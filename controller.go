@@ -1,10 +1,13 @@
 package Multitasking
 
+import "context"
+
 type Controller interface {
 	Terminate()
 	Protect(f func()) error
 	Name() string
 	Debug(bool)
+	Context() context.Context
 	InheritDC() DistributeController
 }
 
@@ -47,6 +50,10 @@ func (bc *BaseController) InheritDC() DistributeController {
 	} else {
 		return nil
 	}
+}
+
+func (bc *BaseController) Context() context.Context {
+	return bc.mt.ctx
 }
 
 func NewBaseController(mt, inherit *Multitasking) *BaseController {

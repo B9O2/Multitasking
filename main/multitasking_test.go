@@ -19,7 +19,7 @@ type Task struct {
 var m = map[int]bool{}
 
 func FastTasks(dc Multitasking.DistributeController) {
-	dc.Debug(true)
+	//dc.Debug(true)
 	for i := 0; i < 40; i++ {
 		dc.AddTask(Task{
 			A: rand.Int(),
@@ -29,7 +29,7 @@ func FastTasks(dc Multitasking.DistributeController) {
 }
 
 func GenNumbers(dc Multitasking.DistributeController) {
-	dc.Debug(true)
+	//dc.Debug(true)
 	final := 0
 	for i := 0; i < 10000; i++ {
 		dc.AddTask(Task{
@@ -155,6 +155,9 @@ func TestMultitasking(t *testing.T) {
 			fmt.Println("TESTING [", tt.name, "]")
 			mt.Register(tt.distribution, tt.exec)
 			mt.SetResultMiddlewares(tt.middlewares...)
+			mt.SetErrorCallback(func(c Multitasking.Controller, err error) {
+				fmt.Println(reflect.TypeOf(c).String(), err)
+			})
 			fmt.Println("开始运行")
 			res, err := mt.Run(context.Background(), tt.threads)
 			fmt.Println("运行结束")
@@ -198,42 +201,14 @@ func TestMultitaskingContext(t *testing.T) {
 }
 
 // -----------------------------------------------------------------//
-func TestRetry(t *testing.T) {
-	rand.Seed(time.Now().Unix())
-	type Task struct {
-		A, B int
-	}
-	mt := Multitasking.NewMultitasking("retry Test", nil)
-	fmt.Println(mt)
-	mt.Register(func(dc Multitasking.DistributeController) {
-		for i := 0; i < 1000; i++ {
-			dc.AddTask(Task{
-				A: rand.Int(),
-				B: rand.Int(),
-			})
-		}
-	}, func(ec Multitasking.ExecuteController, i interface{}) interface{} {
-		task := i.(Task)
-		switch i.(type) {
-		case string:
-			return 1004
-		case Task:
-			mt.Log(1, "测试日志"+time.Now().String())
-			//time.Sleep(1 * time.Second)
-			if (task.A+task.B)%2 == 0 {
-				return task.A + task.B
-			} else {
-				return ec.Retry(Task{
-					A: rand.Int(),
-					B: rand.Int(),
-				})
-			}
-		default:
-			fmt.Println(reflect.TypeOf(i), i)
-			return -1
-		}
-	})
-
+func TestExternalTerminate(t *testing.T) {
+	baseRoutine := runtime.NumGoroutine()
+	mt := Multitasking.NewMultitasking("ovo", nil)
+	mt.Register(GenNumbers, HandleNumber)
+	go func() {
+		time.Sleep(100 * time.Microsecond)
+		mt.Terminate()
+	}()
 	mt.SetErrorCallback(func(ctrl Multitasking.Controller, err error) {
 		switch ctrl.(type) {
 		case Multitasking.ExecuteController:
@@ -250,13 +225,22 @@ func TestRetry(t *testing.T) {
 	if err != nil {
 		return
 	}
-
-	fmt.Println(mt)
+	fmt.Println(run)
 	for _, event := range mt.Events(-2) {
 		fmt.Println(event)
 	}
 
-	fmt.Println(run)
+	goroutines := make([]byte, 1<<20)
+	_ = runtime.Stack(goroutines, true)
+
+	finishRoutine := runtime.NumGoroutine()
+	fmt.Printf("Total goroutines: %d\n", finishRoutine)
+	//fmt.Println(string(goroutines[:length]))
+	if baseRoutine != finishRoutine {
+		panic(fmt.Sprintf("Routine Error:%d->%d", baseRoutine, finishRoutine))
+	} else {
+		fmt.Println("Routines OK")
+	}
 
 	/*
 		for _, event := range mt.Events(1) {

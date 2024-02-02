@@ -67,16 +67,15 @@ type Multitasking struct {
 	resultMiddlewares []Middleware
 	errCallback       func(Controller, error)
 
-	//channel
+	//control
 	taskQueue  chan interface{}
 	retryQueue *chanx.UnboundedChan[any]
+	ctx        context.Context
+	cancel     context.CancelFunc
 
 	//controller
 	dc DistributeController
 	ec ExecuteController
-
-	//control
-	retryIndex int
 
 	//statics
 	maxRetryBlock, totalResult, totalTask uint
@@ -104,9 +103,7 @@ func (m *Multitasking) retry(taskInfo interface{}) {
 }
 
 func (m *Multitasking) SetResultMiddlewares(rms ...Middleware) {
-	for _, rm := range rms {
-		m.resultMiddlewares = append(m.resultMiddlewares, rm)
-	}
+	m.resultMiddlewares = append(m.resultMiddlewares, rms...)
 }
 
 func (m *Multitasking) Log(level int, text string) {
@@ -140,6 +137,10 @@ func (m *Multitasking) String() string {
 	return m.name
 }
 
+func (m *Multitasking) Terminate() {
+	m.cancel()
+}
+
 func (m *Multitasking) SetErrorCallback(callback func(Controller, error)) {
 	m.errCallback = callback
 }
@@ -166,6 +167,7 @@ func (m *Multitasking) protect(f func()) error {
 }
 
 func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interface{}, err error) {
+	m.ctx, m.cancel = context.WithCancel(ctx)
 	terminateErrorIgnore := []string{"multitasking terminated", "send on closed channel"}
 	m.shield = Shield.NewShield()
 	if threads <= 0 {
@@ -229,15 +231,24 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 	for tid := uint(0); tid < threads; {
 		exid := tid
 		totalExecWg.Add(1)
-		go Try(func() {
+		go func() {
 			defer func() {
 				totalExecWg.Done()
 				m.Log(-1, fmt.Sprintf("[-] task execute closed (%d)", exid))
 			}()
 			for task := range bufferQueue {
 				m.Log(-1, fmt.Sprintf("[>]DC: task.data: %v", task))
-
-				ret := m.execCallback(m.ec, task.data)
+				select {
+				case <-m.ec.Context().Done():
+					m.ec.Terminate()
+				default:
+				}
+				var ret any
+				Try(func() {
+					ret = m.execCallback(m.ec, task.data)
+				}, func(msg string) {
+					m.errCallback(m.ec, errors.New(msg))
+				}, terminateErrorIgnore)
 
 				//根据返回类型的不同处理
 				if rt, ok := ret.(RetryResult); ok {
@@ -254,10 +265,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 				}
 				resultQueue <- ret
 			}
-		}, func(msg string) {
-			m.errCallback(m.ec, errors.New(msg))
-
-		}, terminateErrorIgnore)
+		}()
 
 		m.Log(-1, fmt.Sprintf("[+] task execute started (%d)", exid))
 		tid += 1
