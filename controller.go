@@ -9,6 +9,7 @@ type Controller interface {
 	Debug(bool)
 	Context() context.Context
 	InheritDC() DistributeController
+	Init(*Multitasking)
 }
 
 type DistributeController interface {
@@ -28,8 +29,7 @@ type MiddlewareController interface {
 
 // BaseController 基础控制器，其他控制器都应当继承自此控制器
 type BaseController struct {
-	mt      *Multitasking
-	inherit *Multitasking
+	mt *Multitasking
 }
 
 func (bc *BaseController) Name() string {
@@ -45,22 +45,23 @@ func (bc *BaseController) Debug(d bool) {
 }
 
 func (bc *BaseController) InheritDC() DistributeController {
-	if bc.inherit != nil {
-		return bc.inherit.dc
+	if bc.mt.inherit != nil {
+		return bc.mt.inherit.dc
 	} else {
 		return nil
 	}
+}
+
+func (bc *BaseController) Init(mt *Multitasking) {
+	bc.mt = mt
 }
 
 func (bc *BaseController) Context() context.Context {
 	return bc.mt.ctx
 }
 
-func NewBaseController(mt, inherit *Multitasking) *BaseController {
-	return &BaseController{
-		mt:      mt,
-		inherit: inherit,
-	}
+func NewBaseController() *BaseController {
+	return &BaseController{}
 }
 
 // BaseDistributeController 基础的任务分发控制器
@@ -81,6 +82,12 @@ func (bdc *BaseDistributeController) AddTasks(tasks ...any) {
 func (bdc *BaseDistributeController) Terminate() {
 	//fmt.Println("TERMINATED")
 	panic("multitasking terminated")
+}
+
+func NewBaseDistributeController() *BaseDistributeController {
+	return &BaseDistributeController{
+		NewBaseController(),
+	}
 }
 
 // BaseExecuteController 基础的任务执行控制器
@@ -104,4 +111,10 @@ func (bec *BaseExecuteController) Terminate() {
 	TryClose(bec.mt.taskQueue)
 	//TryClose(bec.mt.retryQueue.In)
 
+}
+
+func NewBaseExecuteController() *BaseExecuteController {
+	return &BaseExecuteController{
+		NewBaseController(),
+	}
 }

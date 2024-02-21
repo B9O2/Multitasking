@@ -58,8 +58,9 @@ type Task struct {
 
 type Multitasking struct {
 	//property
-	name  string
-	debug bool
+	name    string
+	debug   bool
+	inherit *Multitasking
 
 	//callback
 	taskCallback      func(DistributeController)
@@ -146,6 +147,7 @@ func (m *Multitasking) SetErrorCallback(callback func(Controller, error)) {
 }
 
 func (m *Multitasking) SetController(ctrl Controller) {
+	ctrl.Init(m)
 	switch c := ctrl.(type) {
 	case DistributeController:
 		m.dc = c
@@ -167,6 +169,9 @@ func (m *Multitasking) protect(f func()) error {
 }
 
 func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interface{}, err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	terminateErrorIgnore := []string{"multitasking terminated", "send on closed channel"}
 	m.shield = Shield.NewShield()
@@ -202,26 +207,25 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 
 	//SchedulingGate
 	go Try(func() {
-		retryWorking := true
-		taskWorking := true
-		for retryWorking || taskWorking {
+		goon := true
+		for goon {
 			select {
-			case task, ok := <-m.retryQueue.Out:
-				if ok {
-					bufferQueue <- Task{true, task}
-					totalRetry += 1
-				} else {
-					retryWorking = false
-				}
+			case task := <-m.retryQueue.Out:
+				bufferQueue <- Task{true, task}
+				totalRetry += 1
 			case task, ok := <-m.taskQueue:
 				if ok {
 					totalTaskWg.Add(1)
 					bufferQueue <- Task{false, task}
-				} else if taskWorking {
+				} else{
 					sgw.Done("SchedulingGate") //确保totalTaskWg的Add在Wait之前完成
-					taskWorking = false
+					goon = false
 				}
 			}
+		}
+		for task := range m.retryQueue.Out {
+			bufferQueue <- Task{true, task}
+			totalRetry += 1
 		}
 	}, func(msg string) {
 		m.errCallback(m.dc, errors.New(msg))
@@ -326,15 +330,13 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 
 func newMultitasking(name string, inherit *Multitasking, debug bool) *Multitasking {
 	mt := &Multitasking{
-		name:  name,
-		debug: debug,
+		name:    name,
+		debug:   debug,
+		inherit: inherit,
 	}
-	dc := &BaseDistributeController{
-		NewBaseController(mt, inherit),
-	}
-	ec := &BaseExecuteController{
-		NewBaseController(mt, inherit),
-	}
+
+	dc := NewBaseDistributeController()
+	ec := NewBaseExecuteController()
 
 	mt.SetController(dc)
 	mt.SetController(ec)
