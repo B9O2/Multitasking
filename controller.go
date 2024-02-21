@@ -1,6 +1,8 @@
 package Multitasking
 
-import "context"
+import (
+	"context"
+)
 
 type Controller interface {
 	Terminate()
@@ -81,6 +83,7 @@ func (bdc *BaseDistributeController) AddTasks(tasks ...any) {
 
 func (bdc *BaseDistributeController) Terminate() {
 	//fmt.Println("TERMINATED")
+	bdc.mt.terminating = true
 	panic("multitasking terminated")
 }
 
@@ -108,6 +111,7 @@ func (bec *BaseExecuteController) Terminate() {
 		}
 	}()
 
+	bec.mt.terminating = true
 	TryClose(bec.mt.taskQueue)
 	//TryClose(bec.mt.retryQueue.In)
 

@@ -248,3 +248,49 @@ func TestExternalTerminate(t *testing.T) {
 		}
 	*/
 }
+
+type TerminateEC struct {
+	*Multitasking.BaseExecuteController
+	n int
+}
+
+func (tec *TerminateEC) T() {
+	if tec.n > 100 {
+		fmt.Println("###TERMINATE###")
+		tec.Terminate()
+	} else {
+		tec.n += 1
+	}
+
+}
+
+func NewTerminateEC() *TerminateEC {
+	return &TerminateEC{
+		Multitasking.NewBaseExecuteController(),
+		0,
+	}
+}
+
+func TestControllerTerminate(t *testing.T) {
+	mt := Multitasking.NewMultitasking("Test", nil)
+	fmt.Println(111)
+	mt.SetController(NewTerminateEC())
+	mt.Register(GenNumbers, func(ec Multitasking.ExecuteController, i any) any {
+		task := i.(Task)
+		fmt.Println(task)
+		if task.I > 2000 {
+			ec.(*TerminateEC).T()
+			return ec.Retry(1000)
+		}
+		return 333
+	})
+	mt.SetResultMiddlewares()
+	_, err := mt.Run(context.Background(), 200)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(mt)
+	for _, event := range mt.Events(-2) {
+		fmt.Println(event)
+	}
+}

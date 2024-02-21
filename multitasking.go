@@ -69,10 +69,11 @@ type Multitasking struct {
 	errCallback       func(Controller, error)
 
 	//control
-	taskQueue  chan interface{}
-	retryQueue *chanx.UnboundedChan[any]
-	ctx        context.Context
-	cancel     context.CancelFunc
+	terminating bool
+	taskQueue   chan interface{}
+	retryQueue  *chanx.UnboundedChan[any]
+	ctx         context.Context
+	cancel      context.CancelFunc
 
 	//controller
 	dc DistributeController
@@ -139,6 +140,7 @@ func (m *Multitasking) String() string {
 }
 
 func (m *Multitasking) Terminate() {
+	m.terminating = true
 	m.cancel()
 }
 
@@ -178,6 +180,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 	if threads <= 0 {
 		return nil, errors.New("threads should be grant than 0")
 	}
+	m.terminating = false
 
 	//control
 	sgw := NewWaiter() //Scheduling Gate Waiter
@@ -217,12 +220,13 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 				if ok {
 					totalTaskWg.Add(1)
 					bufferQueue <- Task{false, task}
-				} else{
+				} else if goon {
 					sgw.Done("SchedulingGate") //确保totalTaskWg的Add在Wait之前完成
 					goon = false
 				}
 			}
 		}
+
 		for task := range m.retryQueue.Out {
 			bufferQueue <- Task{true, task}
 			totalRetry += 1
@@ -249,7 +253,13 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 				}
 				var ret any
 				Try(func() {
-					ret = m.execCallback(m.ec, task.data)
+
+					if !m.terminating {
+						ret = m.execCallback(m.ec, task.data)
+					} else {
+						ret = nil //终止情况下重试任务结果直接置空(nil)
+					}
+
 				}, func(msg string) {
 					m.errCallback(m.ec, errors.New(msg))
 				}, terminateErrorIgnore)
@@ -309,7 +319,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 
 	sgw.WaitAll(1)
 	totalTaskWg.Wait()
-	m.Log(-2, "[*]All Task Done")
+	m.Log(-2, "[*]All Tasks Done")
 	TryClose(m.retryQueue.In)
 	m.Log(-2, "[*]Retry Closed")
 	TryClose(bufferQueue)
