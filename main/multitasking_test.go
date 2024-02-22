@@ -274,13 +274,16 @@ func NewTerminateEC() *TerminateEC {
 func TestControllerTerminate(t *testing.T) {
 	mt := Multitasking.NewMultitasking("Test", nil)
 	fmt.Println(111)
+	mt.SetErrorCallback(func(c Multitasking.Controller, err error) {
+		fmt.Println(reflect.TypeOf(c), err)
+	})
 	mt.SetController(NewTerminateEC())
 	mt.Register(GenNumbers, func(ec Multitasking.ExecuteController, i any) any {
 		task := i.(Task)
-		fmt.Println(task)
+		//fmt.Println(task)
 		if task.I > 2000 {
 			ec.(*TerminateEC).T()
-			return ec.Retry(1000)
+			return ec.Retry()
 		}
 		return 333
 	})

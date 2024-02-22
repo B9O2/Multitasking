@@ -307,7 +307,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 					}, func(s string) {
 						m.errCallback(m.ec, errors.New(s))
 						r = nil
-					}, nil)
+					}, terminateErrorIgnore)
 				}
 				result = append(result, r)
 			}
