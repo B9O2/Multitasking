@@ -19,6 +19,20 @@ func (dp *DataPark) Put(key string, value any) {
 	})
 }
 
+func (dp *DataPark) Get(key string) (any, bool) {
+	var res any
+	var exist bool
+
+	dp.s.Protect(func() {
+		if v, ok := dp.data[key]; ok {
+			exist = true
+			res = v
+		}
+	})
+
+	return res, exist
+}
+
 func (dp *DataPark) Require(key string) any {
 	var res any
 	var ch chan any
@@ -34,6 +48,10 @@ func (dp *DataPark) Require(key string) any {
 		res = <-ch
 	}
 	return res
+}
+
+func (dp *DataPark) Close() {
+	dp.s.Close()
 }
 
 func NewDataPark() *DataPark {
