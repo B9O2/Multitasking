@@ -84,9 +84,7 @@ func HandleNumber(ec Multitasking.ExecuteController, i interface{}) interface{} 
 	ec.Protect(func() {
 		m[task.A+task.B] = false
 	})
-	if task.I > 1000 {
-		ec.Terminate()
-	}
+
 	return task.A + task.B
 }
 
@@ -296,4 +294,79 @@ func TestControllerTerminate(t *testing.T) {
 	for _, event := range mt.Events(-2) {
 		fmt.Println(event)
 	}
+}
+
+func TestPause(t *testing.T) {
+	baseRoutine := runtime.NumGoroutine()
+	mt := Multitasking.NewMultitasking("ovo", nil)
+	mt.Register(func(dc Multitasking.DistributeController) {
+		//dc.Debug(true)
+		final := 0
+		for i := 0; i < 10000; i++ {
+
+			dc.AddTask(Task{
+				A: rand.Int(),
+				B: rand.Int(),
+				I: i,
+			})
+			final += 1
+
+		}
+	}, func(ec Multitasking.ExecuteController, i interface{}) interface{} {
+		task := i.(Task)
+		//mt.Log(1, "测试日志"+time.Now().String())
+		if task.I == 2000 {
+			fmt.Println(">>>尝试暂停")
+			ec.Pause()
+			fmt.Println(">>>已暂停")
+			time.Sleep(3 * time.Second)
+			fmt.Println(">>>尝试恢复")
+			ec.Resume()
+			fmt.Println(">>>已恢复")
+		}
+		return task.A + task.B
+	})
+	mt.SetResultMiddlewares(Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
+		//fmt.Println("Running...")
+
+		return nil, nil
+	}))
+	mt.SetErrorCallback(func(ctrl Multitasking.Controller, err error) {
+		switch ctrl.(type) {
+		case Multitasking.ExecuteController:
+			fmt.Println("Execute:", err)
+		case Multitasking.DistributeController:
+			fmt.Println("Distribute:", err)
+		default:
+			fmt.Println("Unknown Controller:", err)
+		}
+	})
+
+	fmt.Println(mt)
+	run, err := mt.Run(context.Background(), 100)
+	if err != nil {
+		return
+	}
+	fmt.Println(run)
+	for _, event := range mt.Events(-2) {
+		fmt.Println(event)
+	}
+
+	goroutines := make([]byte, 1<<20)
+	_ = runtime.Stack(goroutines, true)
+
+	finishRoutine := runtime.NumGoroutine()
+	fmt.Printf("Total goroutines: %d\n", finishRoutine)
+	//fmt.Println(string(goroutines[:length]))
+	if baseRoutine != finishRoutine {
+		panic(fmt.Sprintf("Routine Error:%d->%d", baseRoutine, finishRoutine))
+	} else {
+		fmt.Println("Routines OK")
+	}
+
+	/*
+		for _, event := range mt.Events(1) {
+			fmt.Println(event)
+		}
+	*/
 }

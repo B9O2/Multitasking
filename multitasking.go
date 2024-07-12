@@ -70,6 +70,7 @@ type Multitasking struct {
 
 	//control
 	terminating bool
+	pauseChan   chan struct{}
 	taskQueue   chan interface{}
 	retryQueue  *chanx.UnboundedChan[any]
 	ctx         context.Context
@@ -87,14 +88,12 @@ type Multitasking struct {
 	shield *Shield.Shield
 }
 
-// addTask 增加任务。此方法应当在任务分发函数中调用。
 func (m *Multitasking) addTask(taskInfo interface{}) {
 	m.taskQueue <- taskInfo
 
 	//m.Log(-2, "Join task successfully")
 }
 
-// retry 重试任务。此方法应当在任务执行过程中调用
 func (m *Multitasking) retry(taskInfo interface{}) {
 	m.retryQueue.In <- taskInfo
 	bl := m.retryQueue.BufLen()
@@ -170,6 +169,19 @@ func (m *Multitasking) protect(f func()) error {
 	return m.shield.Protect(f)
 }
 
+func (m *Multitasking) pause() {
+	_, ok := <-m.pauseChan
+	m.Log(1, fmt.Sprint("Pause Channel:", ok))
+	m.pauseChan = make(chan struct{})
+}
+
+func (m *Multitasking) resume() {
+	defer func() {
+		fmt.Println(recover())
+	}()
+	close(m.pauseChan)
+}
+
 func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interface{}, err error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -191,6 +203,8 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 	resultWg := &sync.WaitGroup{}
 	m.taskQueue = make(chan interface{})
 	m.retryQueue = chanx.NewUnboundedChan[any](context.Background(), 1)
+	m.pauseChan = make(chan struct{})
+	close(m.pauseChan)
 
 	//static
 	totalRetry := 0
@@ -225,6 +239,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 					goon = false
 				}
 			}
+			<-m.pauseChan
 		}
 
 		for task := range m.retryQueue.Out {
@@ -340,9 +355,10 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 
 func newMultitasking(name string, inherit *Multitasking, debug bool) *Multitasking {
 	mt := &Multitasking{
-		name:    name,
-		debug:   debug,
-		inherit: inherit,
+		name:      name,
+		debug:     debug,
+		inherit:   inherit,
+		pauseChan: nil,
 	}
 
 	dc := NewBaseDistributeController()

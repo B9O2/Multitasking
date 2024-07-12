@@ -10,6 +10,10 @@ import (
 
 func TestDataPark(t *testing.T) {
 	dp := Multitasking.NewDataPark()
+
+	v, ok := dp.Get("test")
+	fmt.Println(0, ok, v)
+
 	go func() {
 		fmt.Println(1, "waiting")
 		v := dp.Require("test")
@@ -35,5 +39,10 @@ func TestDataPark(t *testing.T) {
 		v := dp.Require("test")
 		fmt.Println(4, v)
 	}()
-	time.Sleep(3 * time.Second)
+
+	v, ok = dp.Get("test")
+	fmt.Println(5, ok, v)
+
+time.Sleep(3 * time.Second)
+	dp.Close()
 }

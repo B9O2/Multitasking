@@ -12,6 +12,8 @@ type Controller interface {
 	Context() context.Context
 	InheritDC() DistributeController
 	Init(*Multitasking)
+	Pause()
+	Resume()
 }
 
 type DistributeController interface {
@@ -40,6 +42,14 @@ func (bc *BaseController) Name() string {
 
 func (bc *BaseController) Protect(f func()) error {
 	return bc.mt.protect(f)
+}
+
+func (bc *BaseController) Pause() {
+	bc.mt.pause()
+}
+
+func (bc *BaseController) Resume() {
+	bc.mt.resume()
 }
 
 func (bc *BaseController) Debug(d bool) {
