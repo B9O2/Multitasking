@@ -1,4 +1,4 @@
-package main
+package test
 
 import (
 	"context"
@@ -73,7 +73,9 @@ func RetryNumber(ec Multitasking.ExecuteController, i interface{}) interface{} {
 	if q%2 == 0 {
 		return q
 	} else {
+		fmt.Println("retry ", task.B)
 		task.B += 1
+		fmt.Println("new ", task.B)
 		return ec.Retry(task)
 	}
 }
@@ -203,10 +205,16 @@ func TestExternalTerminate(t *testing.T) {
 	baseRoutine := runtime.NumGoroutine()
 	mt := Multitasking.NewMultitasking("ovo", nil)
 	mt.Register(GenNumbers, HandleNumber)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
 	go func() {
 		time.Sleep(100 * time.Microsecond)
-		mt.Terminate()
+		//mt.Terminate()
+		fmt.Println("执行Cancel")
+		cancel()
 	}()
+
 	mt.SetErrorCallback(func(ctrl Multitasking.Controller, err error) {
 		switch ctrl.(type) {
 		case Multitasking.ExecuteController:
@@ -219,7 +227,7 @@ func TestExternalTerminate(t *testing.T) {
 	})
 
 	fmt.Println(mt)
-	run, err := mt.Run(context.Background(), 100)
+	run, err := mt.Run(ctx, 100)
 	if err != nil {
 		return
 	}
@@ -271,7 +279,6 @@ func NewTerminateEC() *TerminateEC {
 
 func TestControllerTerminate(t *testing.T) {
 	mt := Multitasking.NewMultitasking("Test", nil)
-	fmt.Println(111)
 	mt.SetErrorCallback(func(c Multitasking.Controller, err error) {
 		fmt.Println(reflect.TypeOf(c), err)
 	})
@@ -327,7 +334,7 @@ func TestPause(t *testing.T) {
 		return task.A + task.B
 	})
 	mt.SetResultMiddlewares(Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
-		//fmt.Println("Running...")
+		fmt.Println("Running...")
 
 		return nil, nil
 	}))

@@ -1,4 +1,4 @@
-package main
+package test
 
 import (
 	"fmt"
@@ -43,6 +43,6 @@ func TestDataPark(t *testing.T) {
 	v, ok = dp.Get("test")
 	fmt.Println(5, ok, v)
 
-time.Sleep(3 * time.Second)
+	time.Sleep(3 * time.Second)
 	dp.Close()
 }

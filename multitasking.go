@@ -207,7 +207,6 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 	close(m.pauseChan)
 
 	//static
-	totalRetry := 0
 	m.totalTask = 0
 	m.totalResult = 0
 
@@ -229,7 +228,6 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 			select {
 			case task := <-m.retryQueue.Out:
 				bufferQueue <- Task{true, task}
-				totalRetry += 1
 			case task, ok := <-m.taskQueue:
 				if ok {
 					totalTaskWg.Add(1)
@@ -244,7 +242,6 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 
 		for task := range m.retryQueue.Out {
 			bufferQueue <- Task{true, task}
-			totalRetry += 1
 		}
 	}, func(msg string) {
 		m.errCallback(m.dc, errors.New(msg))
@@ -292,6 +289,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 						data:    ret,
 					}
 				}
+				
 				resultQueue <- ret
 			}
 		}()
@@ -324,7 +322,9 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 						r = nil
 					}, terminateErrorIgnore)
 				}
-				result = append(result, r)
+				if r != nil {
+					result = append(result, r)
+				}
 			}
 		}
 		m.Log(-2, "[-] result collector closed")
