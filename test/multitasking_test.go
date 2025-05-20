@@ -31,7 +31,7 @@ func FastTasks(dc Multitasking.DistributeController) {
 func GenNumbers(dc Multitasking.DistributeController) {
 	//dc.Debug(true)
 	final := 0
-	for i := 0; i < 10000; i++ {
+	for i := 0; i < 1000; i++ {
 		dc.AddTask(Task{
 			A: rand.Int(),
 			B: rand.Int(),

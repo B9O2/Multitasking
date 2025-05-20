@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/B9O2/Multitasking/status"
 	"github.com/B9O2/NStruct/Shield"
 	"github.com/smallnest/chanx"
 )
@@ -80,25 +81,48 @@ type Multitasking struct {
 	dc DistributeController
 	ec ExecuteController
 
-	//statics
-	maxRetryBlock, totalResult, totalTask uint
-	events                                []Event
+	//status
+	maxRetryQueue, totalRetry, totalResult, totalTask uint64
+	threadsDetail                                     *status.ThreadsDetail
+	events                                            []Event
 
 	//extra
 	shield *Shield.Shield
 }
 
+func (m *Multitasking) init(ctx context.Context, threads uint) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	m.ctx, m.cancel = context.WithCancel(ctx)
+	m.shield = Shield.NewShield()
+	m.terminating = false
+
+	m.taskQueue = make(chan interface{})
+	m.retryQueue = chanx.NewUnboundedChan[any](context.Background(), 1)
+	m.pauseChan = make(chan struct{})
+	close(m.pauseChan)
+
+	//status
+	m.totalRetry = 0
+	m.totalTask = 0
+	m.totalResult = 0
+	m.maxRetryQueue = 0
+	m.threadsDetail = status.NewThreadsDetail(threads)
+}
+
 func (m *Multitasking) addTask(taskInfo interface{}) {
 	m.taskQueue <- taskInfo
-
+	m.totalTask += 1
 	//m.Log(-2, "Join task successfully")
 }
 
 func (m *Multitasking) retry(taskInfo interface{}) {
 	m.retryQueue.In <- taskInfo
+	m.totalRetry += 1
 	bl := m.retryQueue.BufLen()
-	if bl > int(m.maxRetryBlock) {
-		m.maxRetryBlock = uint(bl)
+	if bl > int(m.maxRetryQueue) {
+		m.maxRetryQueue = uint64(bl)
 	}
 	//m.Log(-2, "retry task successfully")
 }
@@ -136,6 +160,22 @@ func (m *Multitasking) Name() string {
 func (m *Multitasking) String() string {
 	//return fmt.Sprintf("\n%s(%s)\n\\_Total Tasks: %d/%d(Retry: %d MaxRetryWaiting: %d)\n", m.name, m.status, m.totalResult, m.totalTask, m.totalRetry, m.maxRetryBlock)
 	return m.name
+}
+
+func (m *Multitasking) TotalTask() uint64 {
+	return m.totalTask
+}
+
+func (m *Multitasking) TotalRetry() uint64 {
+	return m.totalRetry
+}
+
+func (m *Multitasking) TotalResult() uint64 {
+	return m.totalResult
+}
+
+func (m *Multitasking) MaxRetryQueue() uint64 {
+	return m.maxRetryQueue
 }
 
 func (m *Multitasking) Terminate() {
@@ -183,16 +223,11 @@ func (m *Multitasking) resume() {
 }
 
 func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interface{}, err error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	m.ctx, m.cancel = context.WithCancel(ctx)
-	terminateErrorIgnore := []string{"multitasking terminated", "send on closed channel"}
-	m.shield = Shield.NewShield()
 	if threads <= 0 {
 		return nil, errors.New("threads should be grant than 0")
 	}
-	m.terminating = false
+
+	m.init(ctx, threads)
 
 	//control
 	sgw := NewWaiter() //Scheduling Gate Waiter
@@ -201,14 +236,8 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 	totalTaskWg := &sync.WaitGroup{}
 	totalExecWg := &sync.WaitGroup{}
 	resultWg := &sync.WaitGroup{}
-	m.taskQueue = make(chan interface{})
-	m.retryQueue = chanx.NewUnboundedChan[any](context.Background(), 1)
-	m.pauseChan = make(chan struct{})
-	close(m.pauseChan)
 
-	//static
-	m.totalTask = 0
-	m.totalResult = 0
+	terminateErrorIgnore := []string{"multitasking terminated", "send on closed channel"}
 
 	//Distribution
 	go Try(func() {
@@ -257,6 +286,8 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 				m.Log(-1, fmt.Sprintf("[-] task execute closed (%d)", exid))
 			}()
 			for task := range bufferQueue {
+				m.threadsDetail.Working(exid)
+				m.threadsDetail.Add(exid, 1)
 				m.Log(-1, fmt.Sprintf("[>]DC: task.data: %v", task))
 				select {
 				case <-m.ec.Context().Done():
@@ -289,8 +320,8 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 						data:    ret,
 					}
 				}
-				
 				resultQueue <- ret
+				m.threadsDetail.Idle(exid)
 			}
 		}()
 
