@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/B9O2/Multitasking"
+	"github.com/rs/zerolog"
 )
 
 type Task struct {
@@ -57,12 +58,12 @@ func GenNumbersTerminate(dc Multitasking.DistributeController) {
 	}
 }
 
-func AddNumber(ec Multitasking.ExecuteController, i interface{}) interface{} {
+func AddNumber(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{} {
 	task := i.(Task)
 	return task.A + task.B
 }
 
-func RetryNumber(ec Multitasking.ExecuteController, i interface{}) interface{} {
+func RetryNumber(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{} {
 	task := i.(Task)
 	//mt.Log(1, "测试日志"+time.Now().String())
 	ec.Protect(func() {
@@ -80,7 +81,7 @@ func RetryNumber(ec Multitasking.ExecuteController, i interface{}) interface{} {
 	}
 }
 
-func HandleNumber(ec Multitasking.ExecuteController, i interface{}) interface{} {
+func HandleNumber(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{} {
 	task := i.(Task)
 	//mt.Log(1, "测试日志"+time.Now().String())
 	ec.Protect(func() {
@@ -96,9 +97,9 @@ func TestMultitasking(t *testing.T) {
 	tests := []struct {
 		name         string
 		distribution func(dc Multitasking.DistributeController)
-		exec         func(ec Multitasking.ExecuteController, i interface{}) interface{}
+		exec         func(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{}
 		middlewares  []Multitasking.Middleware
-		threads      uint
+		threads      uint64
 	}{
 		{
 			name:         "Single",
@@ -283,7 +284,7 @@ func TestControllerTerminate(t *testing.T) {
 		fmt.Println(reflect.TypeOf(c), err)
 	})
 	mt.SetController(NewTerminateEC())
-	mt.Register(GenNumbers, func(ec Multitasking.ExecuteController, i any) any {
+	mt.Register(GenNumbers, func(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) any {
 		task := i.(Task)
 		//fmt.Println(task)
 		if task.I > 2000 {
@@ -319,7 +320,7 @@ func TestPause(t *testing.T) {
 			final += 1
 
 		}
-	}, func(ec Multitasking.ExecuteController, i interface{}) interface{} {
+	}, func(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{} {
 		task := i.(Task)
 		//mt.Log(1, "测试日志"+time.Now().String())
 		if task.I == 2000 {
@@ -334,7 +335,7 @@ func TestPause(t *testing.T) {
 		return task.A + task.B
 	})
 	mt.SetResultMiddlewares(Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
-		fmt.Println("Running...")
+		//fmt.Println("Running...")
 
 		return nil, nil
 	}))

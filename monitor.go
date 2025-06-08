@@ -2,6 +2,7 @@ package Multitasking
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 
@@ -9,9 +10,50 @@ import (
 	"google.golang.org/grpc"
 )
 
+const TimeLayout = "2006-01-02 15:04:05"
+
 type MonitorServer struct {
 	monitor.UnimplementedMonitorServiceServer
-	mt *Multitasking
+	mt        *Multitasking
+	logReader func(theadID int64, skipLine uint64, after time.Time) []string
+}
+
+func (ms *MonitorServer) SetLogReader(logReader func(theadID int64, skipLine uint64, after time.Time) []string) {
+	ms.logReader = logReader
+}
+
+func (ms *MonitorServer) StreamEvents(req *monitor.StreamEventsRequest, stream grpc.ServerStreamingServer[monitor.Events]) error {
+	//fmt.Println("Server stream metrics starting")
+	interval := time.Duration(req.Interval)
+	startTime := time.Now()
+	skipLines := uint64(0)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			//fmt.Println("Server metrics sending")
+			var logs []string
+			if ms.logReader == nil {
+				logs = []string{fmt.Sprintf("[%s]Monitor server has no log reader. Skip Lines: %d Start Time: %s", time.Now().Format(TimeLayout), skipLines, startTime.Format(TimeLayout))}
+			} else {
+				logs = ms.logReader(req.ThreadId, skipLines, startTime)
+			}
+
+			events := &monitor.Events{
+				Logs: logs,
+			}
+			skipLines += uint64(len(logs))
+
+			if err := stream.Send(events); err != nil {
+				return err
+			}
+			//fmt.Println("Server metrics sent")
+		case <-stream.Context().Done():
+			return nil
+		}
+	}
 }
 
 func (ms *MonitorServer) StreamStatus(req *monitor.StreamStatusRequest, stream grpc.ServerStreamingServer[monitor.Status]) error {
@@ -25,6 +67,7 @@ func (ms *MonitorServer) StreamStatus(req *monitor.StreamStatusRequest, stream g
 		select {
 		case <-ticker.C:
 			//fmt.Println("Server metrics sending")
+
 			status := &monitor.Status{
 				Name:        ms.mt.Name(),
 				TotalTask:   ms.mt.TotalTask(),
@@ -74,19 +117,42 @@ func (ms *StatusStream) Receive() (*monitor.Status, error) {
 	return ms.stream.Recv()
 }
 
+type EventsStream struct {
+	stream grpc.ServerStreamingClient[monitor.Events]
+}
+
+func (es *EventsStream) Receive() (*monitor.Events, error) {
+	return es.stream.Recv()
+}
+
 type MonitorClient struct {
 	conn *grpc.ClientConn
 	msc  monitor.MonitorServiceClient
 }
 
-func (mc *MonitorClient) StreamMetrics(ctx context.Context, interval time.Duration) (*StatusStream, error) {
+func (mc *MonitorClient) StreamStatus(ctx context.Context, interval time.Duration) (*StatusStream, error) {
 	stream, err := mc.msc.StreamStatus(ctx, &monitor.StreamStatusRequest{
-		Interval: int64(interval),
+		Interval: uint64(interval),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &StatusStream{
+		stream: stream,
+	}, nil
+
+}
+
+// StreamEvents threadID为负数代表所有日志
+func (mc *MonitorClient) StreamEvents(ctx context.Context, interval time.Duration, threadID int64) (*EventsStream, error) {
+	stream, err := mc.msc.StreamEvents(ctx, &monitor.StreamEventsRequest{
+		Interval: uint64(interval),
+		ThreadId: threadID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &EventsStream{
 		stream: stream,
 	}, nil
 

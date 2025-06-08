@@ -19,14 +19,23 @@ message Status {
   ThreadsDetail threads_detail = 6; 
 }
 
-  
-message StreamStatusRequest {
-  int64 interval = 1;     // 数据推送间隔
+// 定义日志
+message Events {
+  repeated string logs = 1;
 }
 
+  
+message StreamStatusRequest {
+  uint64 interval = 1;     // 数据推送间隔
+}
 
+message StreamEventsRequest {
+  uint64 interval = 1;     // 数据推送间隔
+  int64 thread_id = 2;
+}
 
 service MonitorService {
   rpc StreamStatus (StreamStatusRequest) returns (stream Status);
+  rpc StreamEvents (StreamEventsRequest) returns (stream Events);
 }
   

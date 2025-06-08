@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"sync"
 	"time"
 
 	"github.com/B9O2/Multitasking/status"
 	"github.com/B9O2/NStruct/Shield"
+	"github.com/rs/zerolog"
 	"github.com/smallnest/chanx"
 )
 
@@ -65,9 +67,10 @@ type Multitasking struct {
 
 	//callback
 	taskCallback      func(DistributeController)
-	execCallback      func(ExecuteController, interface{}) interface{}
+	execCallback      func(ExecuteController, zerolog.Logger, interface{}) interface{}
 	resultMiddlewares []Middleware
 	errCallback       func(Controller, error)
+	loggerInit        func(uint64, zerolog.Logger) zerolog.Logger
 
 	//control
 	terminating bool
@@ -84,13 +87,15 @@ type Multitasking struct {
 	//status
 	maxRetryQueue, totalRetry, totalResult, totalTask uint64
 	threadsDetail                                     *status.ThreadsDetail
-	events                                            []Event
+	loggers                                           []zerolog.Logger
+
+	events []Event
 
 	//extra
 	shield *Shield.Shield
 }
 
-func (m *Multitasking) init(ctx context.Context, threads uint) {
+func (m *Multitasking) init(ctx context.Context, threads uint64) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -109,6 +114,7 @@ func (m *Multitasking) init(ctx context.Context, threads uint) {
 	m.totalResult = 0
 	m.maxRetryQueue = 0
 	m.threadsDetail = status.NewThreadsDetail(threads)
+	m.loggers = make([]zerolog.Logger, threads)
 }
 
 func (m *Multitasking) addTask(taskInfo interface{}) {
@@ -200,7 +206,17 @@ func (m *Multitasking) SetController(ctrl Controller) {
 	}
 }
 
-func (m *Multitasking) Register(taskFunc func(DistributeController), execFunc func(ExecuteController, any) any) {
+func (m *Multitasking) SetLogger(f func(uint64, zerolog.Logger) zerolog.Logger) {
+	if f == nil {
+		m.loggerInit = func(tid uint64, l zerolog.Logger) zerolog.Logger {
+			return l.Output(os.Stdout).With().Int("thread_id", int(tid)).Timestamp().Logger()
+		}
+	} else {
+		m.loggerInit = f
+	}
+}
+
+func (m *Multitasking) Register(taskFunc func(DistributeController), execFunc func(ExecuteController, zerolog.Logger, any) any) {
 	m.taskCallback = taskFunc
 	m.execCallback = execFunc
 }
@@ -222,7 +238,7 @@ func (m *Multitasking) resume() {
 	close(m.pauseChan)
 }
 
-func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interface{}, err error) {
+func (m *Multitasking) Run(ctx context.Context, threads uint64) (result []interface{}, err error) {
 	if threads <= 0 {
 		return nil, errors.New("threads should be grant than 0")
 	}
@@ -277,9 +293,11 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 	}, terminateErrorIgnore)
 
 	//Execution
-	for tid := uint(0); tid < threads; {
+	for tid := uint64(0); tid < threads; {
 		exid := tid
 		totalExecWg.Add(1)
+		logger := m.loggerInit(tid, zerolog.New(nil))
+		m.loggers[exid] = logger
 		go func() {
 			defer func() {
 				totalExecWg.Done()
@@ -298,7 +316,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint) (result []interfac
 				Try(func() {
 
 					if !m.terminating {
-						ret = m.execCallback(m.ec, task.data)
+						ret = m.execCallback(m.ec, logger, task.data)
 					} else {
 						ret = nil //终止情况下重试任务结果直接置空(nil)
 					}
@@ -397,6 +415,7 @@ func newMultitasking(name string, inherit *Multitasking, debug bool) *Multitaski
 
 	mt.SetController(dc)
 	mt.SetController(ec)
+	mt.SetLogger(nil)
 	mt.SetErrorCallback(func(c Controller, err error) {
 		mt.Log(0, reflect.TypeOf(c).Name()+":"+err.Error())
 	})

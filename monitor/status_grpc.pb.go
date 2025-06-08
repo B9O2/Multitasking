@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	MonitorService_StreamStatus_FullMethodName = "/monitor.MonitorService/StreamStatus"
+	MonitorService_StreamEvents_FullMethodName = "/monitor.MonitorService/StreamEvents"
 )
 
 // MonitorServiceClient is the client API for MonitorService service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MonitorServiceClient interface {
 	StreamStatus(ctx context.Context, in *StreamStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Status], error)
+	StreamEvents(ctx context.Context, in *StreamEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Events], error)
 }
 
 type monitorServiceClient struct {
@@ -56,11 +58,31 @@ func (c *monitorServiceClient) StreamStatus(ctx context.Context, in *StreamStatu
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type MonitorService_StreamStatusClient = grpc.ServerStreamingClient[Status]
 
+func (c *monitorServiceClient) StreamEvents(ctx context.Context, in *StreamEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Events], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &MonitorService_ServiceDesc.Streams[1], MonitorService_StreamEvents_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamEventsRequest, Events]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MonitorService_StreamEventsClient = grpc.ServerStreamingClient[Events]
+
 // MonitorServiceServer is the server API for MonitorService service.
 // All implementations must embed UnimplementedMonitorServiceServer
 // for forward compatibility.
 type MonitorServiceServer interface {
 	StreamStatus(*StreamStatusRequest, grpc.ServerStreamingServer[Status]) error
+	StreamEvents(*StreamEventsRequest, grpc.ServerStreamingServer[Events]) error
 	mustEmbedUnimplementedMonitorServiceServer()
 }
 
@@ -73,6 +95,9 @@ type UnimplementedMonitorServiceServer struct{}
 
 func (UnimplementedMonitorServiceServer) StreamStatus(*StreamStatusRequest, grpc.ServerStreamingServer[Status]) error {
 	return status.Errorf(codes.Unimplemented, "method StreamStatus not implemented")
+}
+func (UnimplementedMonitorServiceServer) StreamEvents(*StreamEventsRequest, grpc.ServerStreamingServer[Events]) error {
+	return status.Errorf(codes.Unimplemented, "method StreamEvents not implemented")
 }
 func (UnimplementedMonitorServiceServer) mustEmbedUnimplementedMonitorServiceServer() {}
 func (UnimplementedMonitorServiceServer) testEmbeddedByValue()                        {}
@@ -106,6 +131,17 @@ func _MonitorService_StreamStatus_Handler(srv interface{}, stream grpc.ServerStr
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type MonitorService_StreamStatusServer = grpc.ServerStreamingServer[Status]
 
+func _MonitorService_StreamEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamEventsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(MonitorServiceServer).StreamEvents(m, &grpc.GenericServerStream[StreamEventsRequest, Events]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MonitorService_StreamEventsServer = grpc.ServerStreamingServer[Events]
+
 // MonitorService_ServiceDesc is the grpc.ServiceDesc for MonitorService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -117,6 +153,11 @@ var MonitorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StreamStatus",
 			Handler:       _MonitorService_StreamStatus_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "StreamEvents",
+			Handler:       _MonitorService_StreamEvents_Handler,
 			ServerStreams: true,
 		},
 	},
