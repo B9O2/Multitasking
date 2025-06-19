@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"sync"
-	"time"
 
 	"github.com/B9O2/Multitasking/status"
 	"github.com/B9O2/NStruct/Shield"
@@ -89,7 +87,7 @@ type Multitasking struct {
 	threadsDetail                                     *status.ThreadsDetail
 	loggers                                           []zerolog.Logger
 
-	events []Event
+	//events []Event
 
 	//extra
 	shield *Shield.Shield
@@ -137,27 +135,27 @@ func (m *Multitasking) SetResultMiddlewares(rms ...Middleware) {
 	m.resultMiddlewares = append(m.resultMiddlewares, rms...)
 }
 
-func (m *Multitasking) Log(level int, text string) {
-	if m.debug {
-		fmt.Println(text)
-	}
+// func (m *Multitasking) Log(level int, text string) {
+// 	if m.debug {
+// 		fmt.Println(text)
+// 	}
 
-	m.events = append(m.events, Event{
-		Level: level,
-		Text:  text,
-		Time:  time.Now(),
-	})
-}
+// 	m.events = append(m.events, Event{
+// 		Level: level,
+// 		Text:  text,
+// 		Time:  time.Now(),
+// 	})
+// }
 
-func (m *Multitasking) Events(level int) []Event {
-	var events []Event
-	for _, event := range m.events {
-		if event.Level <= level {
-			events = append(events, event)
-		}
-	}
-	return events
-}
+// func (m *Multitasking) Events(level int) []Event {
+// 	var events []Event
+// 	for _, event := range m.events {
+// 		if event.Level <= level {
+// 			events = append(events, event)
+// 		}
+// 	}
+// 	return events
+// }
 
 func (m *Multitasking) Name() string {
 	return m.name
@@ -184,6 +182,10 @@ func (m *Multitasking) MaxRetryQueue() uint64 {
 	return m.maxRetryQueue
 }
 
+func (m *Multitasking) ThreadsDetail() *status.ThreadsDetail {
+	return m.threadsDetail
+}
+
 func (m *Multitasking) Terminate() {
 	m.terminating = true
 	m.cancel()
@@ -201,8 +203,7 @@ func (m *Multitasking) SetController(ctrl Controller) {
 	case ExecuteController:
 		m.ec = c
 	default:
-
-		m.Log(-2, fmt.Sprintf("unknown controller type '%s'", reflect.TypeOf(c).String()))
+		//m.Log(-2, fmt.Sprintf("unknown controller type '%s'", reflect.TypeOf(c).String()))
 	}
 }
 
@@ -226,8 +227,8 @@ func (m *Multitasking) protect(f func()) error {
 }
 
 func (m *Multitasking) pause() {
-	_, ok := <-m.pauseChan
-	m.Log(1, fmt.Sprint("Pause Channel:", ok))
+	<-m.pauseChan
+	//m.Log(1, fmt.Sprint("Pause Channel:", ok))
 	m.pauseChan = make(chan struct{})
 }
 
@@ -301,12 +302,12 @@ func (m *Multitasking) Run(ctx context.Context, threads uint64) (result []interf
 		go func() {
 			defer func() {
 				totalExecWg.Done()
-				m.Log(-1, fmt.Sprintf("[-] task execute closed (%d)", exid))
+				//m.Log(-1, fmt.Sprintf("[-] task execute closed (%d)", exid))
 			}()
 			for task := range bufferQueue {
 				m.threadsDetail.Working(exid)
 				m.threadsDetail.Add(exid, 1)
-				m.Log(-1, fmt.Sprintf("[>]DC: task.data: %v", task))
+				//m.Log(-1, fmt.Sprintf("[>]DC: task.data: %v", task))
 				select {
 				case <-m.ec.Context().Done():
 					m.ec.Terminate()
@@ -343,7 +344,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint64) (result []interf
 			}
 		}()
 
-		m.Log(-1, fmt.Sprintf("[+] task execute started (%d)", exid))
+		//m.Log(-1, fmt.Sprintf("[+] task execute started (%d)", exid))
 		tid += 1
 	}
 
@@ -376,28 +377,28 @@ func (m *Multitasking) Run(ctx context.Context, threads uint64) (result []interf
 				}
 			}
 		}
-		m.Log(-2, "[-] result collector closed")
+		//m.Log(-2, "[-] result collector closed")
 	}, func(msg string) {
 		m.errCallback(m.ec, errors.New(msg))
 	}, terminateErrorIgnore)
 
 	sgw.WaitAll(1)
 	totalTaskWg.Wait()
-	m.Log(-2, "[*]All Tasks Done")
+	//m.Log(-2, "[*]All Tasks Done")
 	TryClose(m.retryQueue.In)
-	m.Log(-2, "[*]Retry Closed")
+	//m.Log(-2, "[*]Retry Closed")
 	TryClose(bufferQueue)
-	m.Log(-2, "[*]BufferQueue Closed")
+	//m.Log(-2, "[*]BufferQueue Closed")
 	m.ec.Terminate()
-	m.Log(-2, "[*]EC Terminated")
+	//m.Log(-2, "[*]EC Terminated")
 	totalExecWg.Wait()
-	m.Log(-2, "[*]Total Task Done")
+	//m.Log(-2, "[*]Total Task Done")
 	sgw.Close()
 	m.shield.Close()
 	close(resultQueue)
-	m.Log(-2, "[-]Waiting ResultQueue Close")
+	//m.Log(-2, "[-]Waiting ResultQueue Close")
 	resultWg.Wait()
-	m.Log(-2, "[*]ResultQueue Closed")
+	//m.Log(-2, "[*]ResultQueue Closed")
 
 	return result, nil
 }
@@ -417,7 +418,7 @@ func newMultitasking(name string, inherit *Multitasking, debug bool) *Multitaski
 	mt.SetController(ec)
 	mt.SetLogger(nil)
 	mt.SetErrorCallback(func(c Controller, err error) {
-		mt.Log(0, reflect.TypeOf(c).Name()+":"+err.Error())
+		//mt.Log(0, reflect.TypeOf(c).Name()+":"+err.Error())
 	})
 	return mt
 }

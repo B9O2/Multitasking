@@ -196,9 +196,9 @@ func TestMultitaskingContext(t *testing.T) {
 		fmt.Println(err)
 	}
 	fmt.Println(mt)
-	for _, event := range mt.Events(-2) {
-		fmt.Println(event)
-	}
+	// for _, event := range mt.Events(-2) {
+	// 	fmt.Println(event)
+	// }
 }
 
 // -----------------------------------------------------------------//
@@ -233,9 +233,9 @@ func TestExternalTerminate(t *testing.T) {
 		return
 	}
 	fmt.Println(run)
-	for _, event := range mt.Events(-2) {
-		fmt.Println(event)
-	}
+	// for _, event := range mt.Events(-2) {
+	// 	fmt.Println(event)
+	// }
 
 	goroutines := make([]byte, 1<<20)
 	_ = runtime.Stack(goroutines, true)
@@ -299,9 +299,9 @@ func TestControllerTerminate(t *testing.T) {
 		fmt.Println(err)
 	}
 	fmt.Println(mt)
-	for _, event := range mt.Events(-2) {
-		fmt.Println(event)
-	}
+	// for _, event := range mt.Events(-2) {
+	// 	fmt.Println(event)
+	// }
 }
 
 func TestPause(t *testing.T) {
@@ -356,9 +356,9 @@ func TestPause(t *testing.T) {
 		return
 	}
 	fmt.Println(run)
-	for _, event := range mt.Events(-2) {
-		fmt.Println(event)
-	}
+	// for _, event := range mt.Events(-2) {
+	// 	fmt.Println(event)
+	// }
 
 	goroutines := make([]byte, 1<<20)
 	_ = runtime.Stack(goroutines, true)
