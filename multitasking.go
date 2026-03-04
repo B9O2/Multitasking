@@ -207,17 +207,26 @@ func (m *Multitasking) SetController(ctrl Controller) {
 	}
 }
 
-func (m *Multitasking) SetLogger(f func(uint64, zerolog.Logger) zerolog.Logger) {
+func (m *Multitasking) SetLogger(
+	f func(uint64, zerolog.Logger) zerolog.Logger,
+) {
 	if f == nil {
 		m.loggerInit = func(tid uint64, l zerolog.Logger) zerolog.Logger {
-			return l.Output(os.Stdout).With().Int("thread_id", int(tid)).Timestamp().Logger()
+			return l.Output(os.Stdout).
+				With().
+				Int("thread_id", int(tid)).
+				Timestamp().
+				Logger()
 		}
 	} else {
 		m.loggerInit = f
 	}
 }
 
-func (m *Multitasking) Register(taskFunc func(DistributeController), execFunc func(ExecuteController, zerolog.Logger, any) any) {
+func (m *Multitasking) Register(
+	taskFunc func(DistributeController),
+	execFunc func(ExecuteController, zerolog.Logger, any) any,
+) {
 	m.taskCallback = taskFunc
 	m.execCallback = execFunc
 }
@@ -239,7 +248,10 @@ func (m *Multitasking) resume() {
 	close(m.pauseChan)
 }
 
-func (m *Multitasking) Run(ctx context.Context, threads uint64) (result []interface{}, err error) {
+func (m *Multitasking) Run(
+	ctx context.Context,
+	threads uint64,
+) (result []interface{}, err error) {
 	if threads <= 0 {
 		return nil, errors.New("threads should be grant than 0")
 	}
@@ -254,7 +266,10 @@ func (m *Multitasking) Run(ctx context.Context, threads uint64) (result []interf
 	totalExecWg := &sync.WaitGroup{}
 	resultWg := &sync.WaitGroup{}
 
-	terminateErrorIgnore := []string{"multitasking terminated", "send on closed channel"}
+	terminateErrorIgnore := []string{
+		"multitasking terminated",
+		"send on closed channel",
+	}
 
 	//Distribution
 	go Try(func() {
@@ -366,7 +381,7 @@ func (m *Multitasking) Run(ctx context.Context, threads uint64) (result []interf
 				r := rt.Data()
 				for _, rm := range m.resultMiddlewares {
 					Try(func() {
-						r = rm.Run(m.ec, r)
+						r = rm(m.ec, r)
 					}, func(s string) {
 						m.errCallback(m.ec, errors.New(s))
 						r = nil
@@ -403,7 +418,11 @@ func (m *Multitasking) Run(ctx context.Context, threads uint64) (result []interf
 	return result, nil
 }
 
-func newMultitasking(name string, inherit *Multitasking, debug bool) *Multitasking {
+func newMultitasking(
+	name string,
+	inherit *Multitasking,
+	debug bool,
+) *Multitasking {
 	mt := &Multitasking{
 		name:      name,
 		debug:     debug,

@@ -58,12 +58,20 @@ func GenNumbersTerminate(dc Multitasking.DistributeController) {
 	}
 }
 
-func AddNumber(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{} {
+func AddNumber(
+	ec Multitasking.ExecuteController,
+	logger zerolog.Logger,
+	i interface{},
+) interface{} {
 	task := i.(Task)
 	return task.A + task.B
 }
 
-func RetryNumber(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{} {
+func RetryNumber(
+	ec Multitasking.ExecuteController,
+	logger zerolog.Logger,
+	i interface{},
+) interface{} {
 	task := i.(Task)
 	//mt.Log(1, "测试日志"+time.Now().String())
 	ec.Protect(func() {
@@ -81,7 +89,11 @@ func RetryNumber(ec Multitasking.ExecuteController, logger zerolog.Logger, i int
 	}
 }
 
-func HandleNumber(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{} {
+func HandleNumber(
+	ec Multitasking.ExecuteController,
+	logger zerolog.Logger,
+	i interface{},
+) interface{} {
 	task := i.(Task)
 	//mt.Log(1, "测试日志"+time.Now().String())
 	ec.Protect(func() {
@@ -118,10 +130,10 @@ func TestMultitasking(t *testing.T) {
 			distribution: FastTasks,
 			exec:         AddNumber,
 			middlewares: []Multitasking.Middleware{
-				Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
+				func(ec Multitasking.ExecuteController, i interface{}) interface{} {
 					ec.Terminate()
-					return i, nil
-				}),
+					return i
+				},
 			},
 			threads: 20,
 		},
@@ -130,10 +142,10 @@ func TestMultitasking(t *testing.T) {
 			distribution: GenNumbers,
 			exec:         RetryNumber,
 			middlewares: []Multitasking.Middleware{
-				Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
+				func(ec Multitasking.ExecuteController, i interface{}) interface{} {
 					ec.Terminate()
-					return i, nil
-				}),
+					return i
+				},
 			},
 			threads: 20,
 		},
@@ -142,10 +154,10 @@ func TestMultitasking(t *testing.T) {
 			distribution: GenNumbers,
 			exec:         RetryNumber,
 			middlewares: []Multitasking.Middleware{
-				Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
+				func(ec Multitasking.ExecuteController, i interface{}) any {
 					time.Sleep(1 * time.Second)
-					return i, nil
-				}),
+					return i
+				},
 			},
 			threads: 20,
 		},
@@ -284,15 +296,18 @@ func TestControllerTerminate(t *testing.T) {
 		fmt.Println(reflect.TypeOf(c), err)
 	})
 	mt.SetController(NewTerminateEC())
-	mt.Register(GenNumbers, func(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) any {
-		task := i.(Task)
-		//fmt.Println(task)
-		if task.I > 2000 {
-			ec.(*TerminateEC).T()
-			return ec.Retry()
-		}
-		return 333
-	})
+	mt.Register(
+		GenNumbers,
+		func(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) any {
+			task := i.(Task)
+			//fmt.Println(task)
+			if task.I > 2000 {
+				ec.(*TerminateEC).T()
+				return ec.Retry()
+			}
+			return 333
+		},
+	)
 	mt.SetResultMiddlewares()
 	_, err := mt.Run(context.Background(), 200)
 	if err != nil {
@@ -334,11 +349,13 @@ func TestPause(t *testing.T) {
 		}
 		return task.A + task.B
 	})
-	mt.SetResultMiddlewares(Multitasking.NewBaseMiddleware(func(ec Multitasking.ExecuteController, i interface{}) (interface{}, error) {
-		//fmt.Println("Running...")
+	mt.SetResultMiddlewares(
+		func(ec Multitasking.ExecuteController, i interface{}) interface{} {
+			//fmt.Println("Running...")
 
-		return nil, nil
-	}))
+			return nil
+		},
+	)
 	mt.SetErrorCallback(func(ctrl Multitasking.Controller, err error) {
 		switch ctrl.(type) {
 		case Multitasking.ExecuteController:
