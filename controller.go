@@ -24,7 +24,9 @@ type DistributeController[TaskType any] interface {
 
 type ExecuteController[TaskType any] interface {
 	Controller[TaskType]
-	Retry(...TaskType) RetryResult[TaskType]
+	Retry(...TaskType) Result[TaskType]
+	Success(TaskType) Result[TaskType]
+	Null() Result[TaskType]
 }
 
 type MiddlewareController[TaskType any] interface {
@@ -110,9 +112,21 @@ type BaseExecuteController[TaskType any] struct {
 
 func (bec *BaseExecuteController[TaskType]) Retry(
 	tasks ...TaskType,
-) RetryResult[TaskType] {
+) Result[TaskType] {
 	return RetryResult[TaskType]{
 		tasks: tasks,
+	}
+}
+
+func (bec *BaseExecuteController[TaskType]) Null() Result[TaskType] {
+	return NullResult[TaskType]{}
+}
+
+func (bec *BaseExecuteController[TaskType]) Success(
+	data TaskType,
+) Result[TaskType] {
+	return NormalResult[TaskType]{
+		data: data,
 	}
 }
 

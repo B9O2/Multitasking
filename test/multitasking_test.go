@@ -62,16 +62,16 @@ func AddNumber(
 	ec Multitasking.ExecuteController[any],
 	logger zerolog.Logger,
 	i any,
-) any {
+) Multitasking.Result[any] {
 	task := i.(Task)
-	return task.A + task.B
+	return ec.Success(task.A + task.B)
 }
 
 func RetryNumber(
 	ec Multitasking.ExecuteController[any],
 	logger zerolog.Logger,
 	i any,
-) any {
+) Multitasking.Result[any] {
 	task := i.(Task)
 	//mt.Log(1, "测试日志"+time.Now().String())
 	ec.Protect(func() {
@@ -80,7 +80,7 @@ func RetryNumber(
 
 	q := task.A + task.B
 	if q%2 == 0 {
-		return q
+		return ec.Success(q)
 	} else {
 		fmt.Println("retry ", task.B)
 		task.B += 1
@@ -93,14 +93,14 @@ func HandleNumber(
 	ec Multitasking.ExecuteController[any],
 	logger zerolog.Logger,
 	i any,
-) any {
+) Multitasking.Result[any] {
 	task := i.(Task)
 	//mt.Log(1, "测试日志"+time.Now().String())
 	ec.Protect(func() {
 		m[task.A+task.B] = false
 	})
 
-	return task.A + task.B
+	return ec.Success(task.A + task.B)
 }
 
 func TestMultitasking(t *testing.T) {
@@ -109,7 +109,7 @@ func TestMultitasking(t *testing.T) {
 	tests := []struct {
 		name         string
 		distribution func(dc Multitasking.DistributeController[any])
-		exec         func(ec Multitasking.ExecuteController[any], logger zerolog.Logger, i any) any
+		exec         func(ec Multitasking.ExecuteController[any], logger zerolog.Logger, i any) Multitasking.Result[any]
 		middlewares  []Multitasking.Middleware[any]
 		threads      uint64
 	}{
@@ -130,9 +130,9 @@ func TestMultitasking(t *testing.T) {
 			distribution: FastTasks,
 			exec:         AddNumber,
 			middlewares: []Multitasking.Middleware[any]{
-				func(ec Multitasking.ExecuteController[any], i any) any {
+				func(ec Multitasking.ExecuteController[any], i any) Multitasking.Result[any] {
 					ec.Terminate()
-					return i
+					return ec.Success(i)
 				},
 			},
 			threads: 20,
@@ -142,9 +142,9 @@ func TestMultitasking(t *testing.T) {
 			distribution: GenNumbers,
 			exec:         RetryNumber,
 			middlewares: []Multitasking.Middleware[any]{
-				func(ec Multitasking.ExecuteController[any], i any) any {
+				func(ec Multitasking.ExecuteController[any], i any) Multitasking.Result[any] {
 					ec.Terminate()
-					return i
+					return ec.Success(i)
 				},
 			},
 			threads: 20,
@@ -154,9 +154,9 @@ func TestMultitasking(t *testing.T) {
 			distribution: GenNumbers,
 			exec:         RetryNumber,
 			middlewares: []Multitasking.Middleware[any]{
-				func(ec Multitasking.ExecuteController[any], i any) any {
+				func(ec Multitasking.ExecuteController[any], i any) Multitasking.Result[any] {
 					time.Sleep(1 * time.Second)
-					return i
+					return ec.Success(i)
 				},
 			},
 			threads: 20,
@@ -168,9 +168,11 @@ func TestMultitasking(t *testing.T) {
 			fmt.Println("TESTING [", tt.name, "]")
 			mt.Register(tt.distribution, tt.exec)
 			mt.SetResultMiddlewares(tt.middlewares...)
-			mt.SetErrorCallback(func(c Multitasking.Controller[any], err error) {
-				fmt.Println(reflect.TypeOf(c).String(), err)
-			})
+			mt.SetErrorCallback(
+				func(c Multitasking.Controller[any], err error) {
+					fmt.Println(reflect.TypeOf(c).String(), err)
+				},
+			)
 			fmt.Println("开始运行")
 			res, err := mt.Run(context.Background(), tt.threads)
 			fmt.Println("运行结束")
@@ -298,14 +300,14 @@ func TestControllerTerminate(t *testing.T) {
 	mt.SetController(NewTerminateEC())
 	mt.Register(
 		GenNumbers,
-		func(ec Multitasking.ExecuteController[any], logger zerolog.Logger, i any) any {
+		func(ec Multitasking.ExecuteController[any], logger zerolog.Logger, i any) Multitasking.Result[any] {
 			task := i.(Task)
 			//fmt.Println(task)
 			if task.I > 2000 {
 				ec.(*TerminateEC).T()
 				return ec.Retry()
 			}
-			return 333
+			return ec.Success(333)
 		},
 	)
 	mt.SetResultMiddlewares()
@@ -335,7 +337,7 @@ func TestPause(t *testing.T) {
 			final += 1
 
 		}
-	}, func(ec Multitasking.ExecuteController[any], logger zerolog.Logger, i any) any {
+	}, func(ec Multitasking.ExecuteController[any], logger zerolog.Logger, i any) Multitasking.Result[any] {
 		task := i.(Task)
 		//mt.Log(1, "测试日志"+time.Now().String())
 		if task.I == 2000 {
@@ -347,13 +349,13 @@ func TestPause(t *testing.T) {
 			ec.Resume()
 			fmt.Println(">>>已恢复")
 		}
-		return task.A + task.B
+		return ec.Success(task.A + task.B)
 	})
 	mt.SetResultMiddlewares(
-		func(ec Multitasking.ExecuteController[any], i any) any {
+		func(ec Multitasking.ExecuteController[any], i any) Multitasking.Result[any] {
 			//fmt.Println("Running...")
 
-			return nil
+			return ec.Null()
 		},
 	)
 	mt.SetErrorCallback(func(ctrl Multitasking.Controller[any], err error) {

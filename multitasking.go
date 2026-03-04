@@ -13,45 +13,6 @@ import (
 	"github.com/smallnest/chanx"
 )
 
-type Result[TaskType any] interface {
-	IsRetry() bool
-	RawTask() Task[TaskType]
-}
-
-type RetryResult[TaskType any] struct {
-	rawTask Task[TaskType]
-	tasks   []TaskType
-}
-
-func (rr RetryResult[TaskType]) RawTask() Task[TaskType] {
-	return rr.rawTask
-}
-
-func (rr RetryResult[TaskType]) Tasks() []TaskType {
-	return rr.tasks
-}
-
-func (rr RetryResult[TaskType]) IsRetry() bool {
-	return true
-}
-
-type NormalResult[TaskType any] struct {
-	rawTask Task[TaskType]
-	data    TaskType
-}
-
-func (nr NormalResult[TaskType]) RawTask() Task[TaskType] {
-	return nr.rawTask
-}
-
-func (nr NormalResult[TaskType]) Data() TaskType {
-	return nr.data
-}
-
-func (nr NormalResult[TaskType]) IsRetry() bool {
-	return false
-}
-
 type Task[TaskType any] struct {
 	isRetry bool
 	data    TaskType
@@ -65,7 +26,7 @@ type Multitasking[TaskType any] struct {
 
 	//callback
 	taskCallback      func(DistributeController[TaskType])
-	execCallback      func(ExecuteController[TaskType], zerolog.Logger, TaskType) TaskType
+	execCallback      func(ExecuteController[TaskType], zerolog.Logger, TaskType) Result[TaskType]
 	resultMiddlewares []Middleware[TaskType]
 	errCallback       func(Controller[TaskType], error)
 	loggerInit        func(uint64, zerolog.Logger) zerolog.Logger
@@ -229,7 +190,7 @@ func (m *Multitasking[TaskType]) SetLogger(
 
 func (m *Multitasking[TaskType]) Register(
 	taskFunc func(DistributeController[TaskType]),
-	execFunc func(ExecuteController[TaskType], zerolog.Logger, TaskType) TaskType,
+	execFunc func(ExecuteController[TaskType], zerolog.Logger, TaskType) Result[TaskType],
 ) {
 	m.taskCallback = taskFunc
 	m.execCallback = execFunc
@@ -333,13 +294,10 @@ func (m *Multitasking[TaskType]) Run(
 				default:
 				}
 				var res Result[TaskType]
-				var ret TaskType
 				Try(func() {
 
 					if !m.terminating {
-						ret = m.execCallback(m.ec, logger, task.data)
-					} else {
-						res = nil //终止情况下重试任务结果直接置空(nil)
+						res = m.execCallback(m.ec, logger, task.data)
 					}
 
 				}, func(msg string) {
@@ -347,18 +305,24 @@ func (m *Multitasking[TaskType]) Run(
 				}, terminateErrorIgnore)
 
 				//根据返回类型的不同处理
-				if rt, ok := any(ret).(RetryResult[TaskType]); ok {
-					rt.rawTask = task
-					if len(rt.tasks) <= 0 {
-						rt.tasks = []TaskType{task.data}
-					}
-					res = rt
-				} else {
+				if res == nil {
 					res = NormalResult[TaskType]{
 						rawTask: task,
-						data:    ret,
+					}
+				} else {
+					switch rt := res.(type) {
+					case RetryResult[TaskType]:
+						rt.rawTask = task
+						if len(rt.tasks) <= 0 {
+							rt.tasks = []TaskType{task.data}
+						}
+						res = rt
+					case NormalResult[TaskType]:
+						rt.rawTask = task
+						res = rt
 					}
 				}
+
 				resultQueue <- res
 				m.threadsDetail.Idle(exid)
 			}
@@ -375,23 +339,46 @@ func (m *Multitasking[TaskType]) Run(
 			resultWg.Done()
 		}()
 		for ret := range resultQueue {
+			if ret == nil {
+				continue
+			}
 			switch rt := ret.(type) {
 			case RetryResult[TaskType]:
 				for _, rTask := range rt.Tasks() {
 					m.retry(rTask)
 				}
+
+			case NullResult[TaskType]:
+				continue
+
 			case NormalResult[TaskType]:
-				m.totalResult += 1
-				totalTaskWg.Done()
-				r := rt.Data()
+				if m.terminating {
+					totalTaskWg.Done()
+					continue
+				}
+
+				var currentRes Result[TaskType] = rt
 				for _, rm := range m.resultMiddlewares {
 					Try(func() {
-						r = rm(m.ec, r)
+						if nr, ok := currentRes.(NormalResult[TaskType]); ok {
+							currentRes = rm(m.ec, nr.Data())
+						}
 					}, func(s string) {
 						m.errCallback(m.ec, errors.New(s))
 					}, terminateErrorIgnore)
 				}
-				results = append(results, r)
+
+				if nr, ok := currentRes.(NormalResult[TaskType]); ok {
+					m.totalResult += 1
+					results = append(results, nr.Data())
+					totalTaskWg.Done()
+				} else if rr, ok := currentRes.(RetryResult[TaskType]); ok {
+					for _, rTask := range rr.Tasks() {
+						m.retry(rTask)
+					}
+				} else {
+					totalTaskWg.Done()
+				}
 			}
 		}
 		//m.Log(-2, "[-] result collector closed")
