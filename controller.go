@@ -24,7 +24,7 @@ type DistributeController[TaskType any] interface {
 
 type ExecuteController[TaskType any] interface {
 	Controller[TaskType]
-	Retry(...any) RetryResult[TaskType]
+	Retry(...TaskType) RetryResult[TaskType]
 }
 
 type MiddlewareController[TaskType any] interface {
