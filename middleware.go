@@ -1,3 +1,3 @@
 package Multitasking
 
-type Middleware func(ExecuteController, any) any
+type Middleware[TaskType any] func(ExecuteController[TaskType], TaskType) TaskType

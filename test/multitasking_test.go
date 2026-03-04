@@ -19,7 +19,7 @@ type Task struct {
 
 var m = map[int]bool{}
 
-func FastTasks(dc Multitasking.DistributeController) {
+func FastTasks[TaskType any](dc Multitasking.DistributeController) {
 	//dc.Debug(true)
 	for i := 0; i < 40; i++ {
 		dc.AddTask(Task{
@@ -58,8 +58,8 @@ func GenNumbersTerminate(dc Multitasking.DistributeController) {
 	}
 }
 
-func AddNumber(
-	ec Multitasking.ExecuteController,
+func AddNumber[TaskType any](
+	ec Multitasking.ExecuteController[TaskType],
 	logger zerolog.Logger,
 	i interface{},
 ) interface{} {
@@ -67,8 +67,8 @@ func AddNumber(
 	return task.A + task.B
 }
 
-func RetryNumber(
-	ec Multitasking.ExecuteController,
+func RetryNumber[TaskType any](
+	ec Multitasking.ExecuteController[TaskType],
 	logger zerolog.Logger,
 	i interface{},
 ) interface{} {
@@ -89,8 +89,8 @@ func RetryNumber(
 	}
 }
 
-func HandleNumber(
-	ec Multitasking.ExecuteController,
+func HandleNumber[TaskType any](
+	ec Multitasking.ExecuteController[TaskType],
 	logger zerolog.Logger,
 	i interface{},
 ) interface{} {

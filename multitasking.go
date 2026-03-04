@@ -13,74 +13,74 @@ import (
 	"github.com/smallnest/chanx"
 )
 
-type Result interface {
+type Result[TaskType any] interface {
 	IsRetry() bool
-	RawTask() Task
+	RawTask() Task[TaskType]
 }
 
-type RetryResult struct {
-	rawTask Task
-	tasks   []any
+type RetryResult[TaskType any] struct {
+	rawTask Task[TaskType]
+	tasks   []TaskType
 }
 
-func (rr RetryResult) RawTask() Task {
+func (rr RetryResult[TaskType]) RawTask() Task[TaskType] {
 	return rr.rawTask
 }
 
-func (rr RetryResult) Tasks() []any {
+func (rr RetryResult[TaskType]) Tasks() []TaskType {
 	return rr.tasks
 }
 
-func (rr RetryResult) IsRetry() bool {
+func (rr RetryResult[TaskType]) IsRetry() bool {
 	return true
 }
 
-type NormalResult struct {
-	rawTask Task
-	data    any
+type NormalResult[TaskType any] struct {
+	rawTask Task[TaskType]
+	data    TaskType
 }
 
-func (nr NormalResult) RawTask() Task {
+func (nr NormalResult[TaskType]) RawTask() Task[TaskType] {
 	return nr.rawTask
 }
 
-func (nr NormalResult) Data() any {
+func (nr NormalResult[TaskType]) Data() TaskType {
 	return nr.data
 }
 
-func (nr NormalResult) IsRetry() bool {
+func (nr NormalResult[TaskType]) IsRetry() bool {
 	return false
 }
 
-type Task struct {
+type Task[TaskType any] struct {
 	isRetry bool
-	data    any
+	data    TaskType
 }
 
-type Multitasking struct {
+type Multitasking[TaskType any] struct {
 	//property
 	name    string
 	debug   bool
-	inherit *Multitasking
+	inherit *Multitasking[TaskType]
 
 	//callback
-	taskCallback      func(DistributeController)
-	execCallback      func(ExecuteController, zerolog.Logger, interface{}) interface{}
-	resultMiddlewares []Middleware
-	errCallback       func(Controller, error)
+	taskCallback      func(DistributeController[TaskType])
+	execCallback      func(ExecuteController[TaskType], zerolog.Logger, TaskType) TaskType
+	resultMiddlewares []Middleware[TaskType]
+	errCallback       func(Controller[TaskType], error)
 	loggerInit        func(uint64, zerolog.Logger) zerolog.Logger
 
 	//control
 	terminating bool
 	pauseChan   chan struct{}
-	taskQueue   chan interface{}
-	retryQueue  *chanx.UnboundedChan[any]
+	taskQueue   chan TaskType
+	retryQueue  *chanx.UnboundedChan[TaskType]
 	ctx         context.Context
 	cancel      context.CancelFunc
 
 	//controller
-	dc DistributeController
-	ec ExecuteController
+	dc DistributeController[TaskType]
+	ec ExecuteController[TaskType]
 
 	//status
 	maxRetryQueue, totalRetry, totalResult, totalTask uint64
@@ -93,7 +93,7 @@ type Multitasking struct {
 	shield *Shield.Shield
 }
 
-func (m *Multitasking) init(ctx context.Context, threads uint64) {
+func (m *Multitasking[TaskType]) init(ctx context.Context, threads uint64) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -101,8 +101,8 @@ func (m *Multitasking) init(ctx context.Context, threads uint64) {
 	m.shield = Shield.NewShield()
 	m.terminating = false
 
-	m.taskQueue = make(chan interface{})
-	m.retryQueue = chanx.NewUnboundedChan[any](context.Background(), 1)
+	m.taskQueue = make(chan TaskType)
+	m.retryQueue = chanx.NewUnboundedChan[TaskType](context.Background(), 1)
 	m.pauseChan = make(chan struct{})
 	close(m.pauseChan)
 
@@ -115,13 +115,13 @@ func (m *Multitasking) init(ctx context.Context, threads uint64) {
 	m.loggers = make([]zerolog.Logger, threads)
 }
 
-func (m *Multitasking) addTask(taskInfo interface{}) {
+func (m *Multitasking[TaskType]) addTask(taskInfo TaskType) {
 	m.taskQueue <- taskInfo
 	m.totalTask += 1
 	//m.Log(-2, "Join task successfully")
 }
 
-func (m *Multitasking) retry(taskInfo interface{}) {
+func (m *Multitasking[TaskType]) retry(taskInfo TaskType) {
 	m.retryQueue.In <- taskInfo
 	m.totalRetry += 1
 	bl := m.retryQueue.BufLen()
@@ -131,11 +131,13 @@ func (m *Multitasking) retry(taskInfo interface{}) {
 	//m.Log(-2, "retry task successfully")
 }
 
-func (m *Multitasking) SetResultMiddlewares(rms ...Middleware) {
+func (m *Multitasking[TaskType]) SetResultMiddlewares(
+	rms ...Middleware[TaskType],
+) {
 	m.resultMiddlewares = append(m.resultMiddlewares, rms...)
 }
 
-// func (m *Multitasking) Log(level int, text string) {
+// func (m *Multitasking[TaskType]) Log(level int, text string) {
 // 	if m.debug {
 // 		fmt.Println(text)
 // 	}
@@ -147,7 +149,7 @@ func (m *Multitasking) SetResultMiddlewares(rms ...Middleware) {
 // 	})
 // }
 
-// func (m *Multitasking) Events(level int) []Event {
+// func (m *Multitasking[TaskType]) Events(level int) []Event {
 // 	var events []Event
 // 	for _, event := range m.events {
 // 		if event.Level <= level {
@@ -157,57 +159,59 @@ func (m *Multitasking) SetResultMiddlewares(rms ...Middleware) {
 // 	return events
 // }
 
-func (m *Multitasking) Name() string {
+func (m *Multitasking[TaskType]) Name() string {
 	return m.name
 }
 
-func (m *Multitasking) String() string {
+func (m *Multitasking[TaskType]) String() string {
 	//return fmt.Sprintf("\n%s(%s)\n\\_Total Tasks: %d/%d(Retry: %d MaxRetryWaiting: %d)\n", m.name, m.status, m.totalResult, m.totalTask, m.totalRetry, m.maxRetryBlock)
 	return m.name
 }
 
-func (m *Multitasking) TotalTask() uint64 {
+func (m *Multitasking[TaskType]) TotalTask() uint64 {
 	return m.totalTask
 }
 
-func (m *Multitasking) TotalRetry() uint64 {
+func (m *Multitasking[TaskType]) TotalRetry() uint64 {
 	return m.totalRetry
 }
 
-func (m *Multitasking) TotalResult() uint64 {
+func (m *Multitasking[TaskType]) TotalResult() uint64 {
 	return m.totalResult
 }
 
-func (m *Multitasking) MaxRetryQueue() uint64 {
+func (m *Multitasking[TaskType]) MaxRetryQueue() uint64 {
 	return m.maxRetryQueue
 }
 
-func (m *Multitasking) ThreadsDetail() *status.ThreadsDetail {
+func (m *Multitasking[TaskType]) ThreadsDetail() *status.ThreadsDetail {
 	return m.threadsDetail
 }
 
-func (m *Multitasking) Terminate() {
+func (m *Multitasking[TaskType]) Terminate() {
 	m.terminating = true
 	m.cancel()
 }
 
-func (m *Multitasking) SetErrorCallback(callback func(Controller, error)) {
+func (m *Multitasking[TaskType]) SetErrorCallback(
+	callback func(Controller[TaskType], error),
+) {
 	m.errCallback = callback
 }
 
-func (m *Multitasking) SetController(ctrl Controller) {
+func (m *Multitasking[TaskType]) SetController(ctrl Controller[TaskType]) {
 	ctrl.Init(m)
 	switch c := ctrl.(type) {
-	case DistributeController:
+	case DistributeController[TaskType]:
 		m.dc = c
-	case ExecuteController:
+	case ExecuteController[TaskType]:
 		m.ec = c
 	default:
 		//m.Log(-2, fmt.Sprintf("unknown controller type '%s'", reflect.TypeOf(c).String()))
 	}
 }
 
-func (m *Multitasking) SetLogger(
+func (m *Multitasking[TaskType]) SetLogger(
 	f func(uint64, zerolog.Logger) zerolog.Logger,
 ) {
 	if f == nil {
@@ -223,32 +227,32 @@ func (m *Multitasking) SetLogger(
 	}
 }
 
-func (m *Multitasking) Register(
-	taskFunc func(DistributeController),
-	execFunc func(ExecuteController, zerolog.Logger, any) any,
+func (m *Multitasking[TaskType]) Register(
+	taskFunc func(DistributeController[TaskType]),
+	execFunc func(ExecuteController[TaskType], zerolog.Logger, TaskType) TaskType,
 ) {
 	m.taskCallback = taskFunc
 	m.execCallback = execFunc
 }
 
-func (m *Multitasking) protect(f func()) error {
+func (m *Multitasking[TaskType]) protect(f func()) error {
 	return m.shield.Protect(f)
 }
 
-func (m *Multitasking) pause() {
+func (m *Multitasking[TaskType]) pause() {
 	<-m.pauseChan
 	//m.Log(1, fmt.Sprint("Pause Channel:", ok))
 	m.pauseChan = make(chan struct{})
 }
 
-func (m *Multitasking) resume() {
+func (m *Multitasking[TaskType]) resume() {
 	defer func() {
 		fmt.Println(recover())
 	}()
 	close(m.pauseChan)
 }
 
-func (m *Multitasking) Run(
+func (m *Multitasking[TaskType]) Run(
 	ctx context.Context,
 	threads uint64,
 ) (result []interface{}, err error) {
@@ -260,8 +264,8 @@ func (m *Multitasking) Run(
 
 	//control
 	sgw := NewWaiter() //Scheduling Gate Waiter
-	bufferQueue := make(chan Task)
-	resultQueue := make(chan interface{})
+	bufferQueue := make(chan Task[TaskType])
+	resultQueue := make(chan Result[TaskType])
 	totalTaskWg := &sync.WaitGroup{}
 	totalExecWg := &sync.WaitGroup{}
 	resultWg := &sync.WaitGroup{}
@@ -288,11 +292,11 @@ func (m *Multitasking) Run(
 		for goon {
 			select {
 			case task := <-m.retryQueue.Out:
-				bufferQueue <- Task{true, task}
+				bufferQueue <- Task[TaskType]{true, task}
 			case task, ok := <-m.taskQueue:
 				if ok {
 					totalTaskWg.Add(1)
-					bufferQueue <- Task{false, task}
+					bufferQueue <- Task[TaskType]{false, task}
 				} else if goon {
 					sgw.Done("SchedulingGate") //确保totalTaskWg的Add在Wait之前完成
 					goon = false
@@ -302,7 +306,7 @@ func (m *Multitasking) Run(
 		}
 
 		for task := range m.retryQueue.Out {
-			bufferQueue <- Task{true, task}
+			bufferQueue <- Task[TaskType]{true, task}
 		}
 	}, func(msg string) {
 		m.errCallback(m.dc, errors.New(msg))
@@ -328,13 +332,14 @@ func (m *Multitasking) Run(
 					m.ec.Terminate()
 				default:
 				}
-				var ret any
+				var result Result[TaskType]
+				var ret TaskType
 				Try(func() {
 
 					if !m.terminating {
 						ret = m.execCallback(m.ec, logger, task.data)
 					} else {
-						ret = nil //终止情况下重试任务结果直接置空(nil)
+						result = nil //终止情况下重试任务结果直接置空(nil)
 					}
 
 				}, func(msg string) {
@@ -342,19 +347,19 @@ func (m *Multitasking) Run(
 				}, terminateErrorIgnore)
 
 				//根据返回类型的不同处理
-				if rt, ok := ret.(RetryResult); ok {
+				if rt, ok := result.(RetryResult[TaskType]); ok {
 					rt.rawTask = task
 					if len(rt.tasks) <= 0 {
-						rt.tasks = []any{task.data}
+						rt.tasks = []TaskType{task.data}
 					}
-					ret = rt
+					result = rt
 				} else {
-					ret = NormalResult{
+					result = NormalResult[TaskType]{
 						rawTask: task,
 						data:    ret,
 					}
 				}
-				resultQueue <- ret
+				resultQueue <- result
 				m.threadsDetail.Idle(exid)
 			}
 		}()
@@ -371,11 +376,11 @@ func (m *Multitasking) Run(
 		}()
 		for ret := range resultQueue {
 			switch rt := ret.(type) {
-			case RetryResult:
+			case RetryResult[TaskType]:
 				for _, rTask := range rt.Tasks() {
 					m.retry(rTask)
 				}
-			case NormalResult:
+			case NormalResult[TaskType]:
 				m.totalResult += 1
 				totalTaskWg.Done()
 				r := rt.Data()
@@ -384,12 +389,9 @@ func (m *Multitasking) Run(
 						r = rm(m.ec, r)
 					}, func(s string) {
 						m.errCallback(m.ec, errors.New(s))
-						r = nil
 					}, terminateErrorIgnore)
 				}
-				if r != nil {
-					result = append(result, r)
-				}
+
 			}
 		}
 		//m.Log(-2, "[-] result collector closed")
@@ -418,32 +420,35 @@ func (m *Multitasking) Run(
 	return result, nil
 }
 
-func newMultitasking(
+func newMultitasking[TaskType any](
 	name string,
-	inherit *Multitasking,
+	inherit *Multitasking[TaskType],
 	debug bool,
-) *Multitasking {
-	mt := &Multitasking{
+) *Multitasking[TaskType] {
+	mt := &Multitasking[TaskType]{
 		name:      name,
 		debug:     debug,
 		inherit:   inherit,
 		pauseChan: nil,
 	}
 
-	dc := NewBaseDistributeController()
-	ec := NewBaseExecuteController()
+	dc := NewBaseDistributeController[TaskType]()
+	ec := NewBaseExecuteController[TaskType]()
 
 	mt.SetController(dc)
 	mt.SetController(ec)
 	mt.SetLogger(nil)
-	mt.SetErrorCallback(func(c Controller, err error) {
+	mt.SetErrorCallback(func(c Controller[TaskType], err error) {
 		//mt.Log(0, reflect.TypeOf(c).Name()+":"+err.Error())
 	})
 	return mt
 }
 
 // NewMultitasking 实例化一个多线程管理实例。如果需要嵌套，此实例应处于最上层。
-func NewMultitasking(name string, inherit *Multitasking) *Multitasking {
+func NewMultitasking[TaskType any](
+	name string,
+	inherit *Multitasking[TaskType],
+) *Multitasking[TaskType] {
 	lrm := newMultitasking(name, inherit, false)
 	return lrm
 }
