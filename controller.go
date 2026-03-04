@@ -18,8 +18,8 @@ type Controller[TaskType any] interface {
 
 type DistributeController[TaskType any] interface {
 	Controller[TaskType]
-	AddTask(any)
-	AddTasks(...any)
+	AddTask(TaskType)
+	AddTasks(...TaskType)
 }
 
 type ExecuteController[TaskType any] interface {

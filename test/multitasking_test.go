@@ -19,7 +19,7 @@ type Task struct {
 
 var m = map[int]bool{}
 
-func FastTasks[TaskType any](dc Multitasking.DistributeController) {
+func FastTasks(dc Multitasking.DistributeController[any]) {
 	//dc.Debug(true)
 	for i := 0; i < 40; i++ {
 		dc.AddTask(Task{
@@ -29,7 +29,7 @@ func FastTasks[TaskType any](dc Multitasking.DistributeController) {
 	}
 }
 
-func GenNumbers(dc Multitasking.DistributeController) {
+func GenNumbers(dc Multitasking.DistributeController[any]) {
 	//dc.Debug(true)
 	final := 0
 	for i := 0; i < 1000; i++ {
@@ -42,7 +42,7 @@ func GenNumbers(dc Multitasking.DistributeController) {
 	}
 }
 
-func GenNumbersTerminate(dc Multitasking.DistributeController) {
+func GenNumbersTerminate(dc Multitasking.DistributeController[any]) {
 	dc.Debug(true)
 	final := 0
 	for i := 0; i < 10000; i++ {
@@ -58,20 +58,20 @@ func GenNumbersTerminate(dc Multitasking.DistributeController) {
 	}
 }
 
-func AddNumber[TaskType any](
-	ec Multitasking.ExecuteController[TaskType],
+func AddNumber(
+	ec Multitasking.ExecuteController[any],
 	logger zerolog.Logger,
-	i interface{},
-) interface{} {
+	i any,
+) any {
 	task := i.(Task)
 	return task.A + task.B
 }
 
-func RetryNumber[TaskType any](
-	ec Multitasking.ExecuteController[TaskType],
+func RetryNumber(
+	ec Multitasking.ExecuteController[any],
 	logger zerolog.Logger,
-	i interface{},
-) interface{} {
+	i any,
+) any {
 	task := i.(Task)
 	//mt.Log(1, "测试日志"+time.Now().String())
 	ec.Protect(func() {
@@ -89,11 +89,11 @@ func RetryNumber[TaskType any](
 	}
 }
 
-func HandleNumber[TaskType any](
-	ec Multitasking.ExecuteController[TaskType],
+func HandleNumber(
+	ec Multitasking.ExecuteController[any],
 	logger zerolog.Logger,
-	i interface{},
-) interface{} {
+	i any,
+) any {
 	task := i.(Task)
 	//mt.Log(1, "测试日志"+time.Now().String())
 	ec.Protect(func() {
@@ -105,12 +105,12 @@ func HandleNumber[TaskType any](
 
 func TestMultitasking(t *testing.T) {
 	baseRoutine := runtime.NumGoroutine()
-	mt := Multitasking.NewMultitasking("Test", nil)
+	mt := Multitasking.NewMultitasking[any]("Test", nil)
 	tests := []struct {
 		name         string
-		distribution func(dc Multitasking.DistributeController)
-		exec         func(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{}
-		middlewares  []Multitasking.Middleware
+		distribution func(dc Multitasking.DistributeController[any])
+		exec         func(ec Multitasking.ExecuteController[any], logger zerolog.Logger, i any) any
+		middlewares  []Multitasking.Middleware[any]
 		threads      uint64
 	}{
 		{
@@ -129,8 +129,8 @@ func TestMultitasking(t *testing.T) {
 			name:         "Fast Terminate",
 			distribution: FastTasks,
 			exec:         AddNumber,
-			middlewares: []Multitasking.Middleware{
-				func(ec Multitasking.ExecuteController, i interface{}) interface{} {
+			middlewares: []Multitasking.Middleware[any]{
+				func(ec Multitasking.ExecuteController[any], i any) any {
 					ec.Terminate()
 					return i
 				},
@@ -141,8 +141,8 @@ func TestMultitasking(t *testing.T) {
 			name:         "Retry",
 			distribution: GenNumbers,
 			exec:         RetryNumber,
-			middlewares: []Multitasking.Middleware{
-				func(ec Multitasking.ExecuteController, i interface{}) interface{} {
+			middlewares: []Multitasking.Middleware[any]{
+				func(ec Multitasking.ExecuteController[any], i any) any {
 					ec.Terminate()
 					return i
 				},
@@ -153,8 +153,8 @@ func TestMultitasking(t *testing.T) {
 			name:         "Slow Middleware",
 			distribution: GenNumbers,
 			exec:         RetryNumber,
-			middlewares: []Multitasking.Middleware{
-				func(ec Multitasking.ExecuteController, i interface{}) any {
+			middlewares: []Multitasking.Middleware[any]{
+				func(ec Multitasking.ExecuteController[any], i any) any {
 					time.Sleep(1 * time.Second)
 					return i
 				},
@@ -168,7 +168,7 @@ func TestMultitasking(t *testing.T) {
 			fmt.Println("TESTING [", tt.name, "]")
 			mt.Register(tt.distribution, tt.exec)
 			mt.SetResultMiddlewares(tt.middlewares...)
-			mt.SetErrorCallback(func(c Multitasking.Controller, err error) {
+			mt.SetErrorCallback(func(c Multitasking.Controller[any], err error) {
 				fmt.Println(reflect.TypeOf(c).String(), err)
 			})
 			fmt.Println("开始运行")
@@ -200,7 +200,7 @@ func TestMultitasking(t *testing.T) {
 // ------------------------------示例-----------------------------------------//
 
 func TestMultitaskingContext(t *testing.T) {
-	mt := Multitasking.NewMultitasking("Test", nil)
+	mt := Multitasking.NewMultitasking[any]("Test", nil)
 	mt.Register(GenNumbers, HandleNumber)
 	mt.SetResultMiddlewares()
 	_, err := mt.Run(context.Background(), 200)
@@ -216,7 +216,7 @@ func TestMultitaskingContext(t *testing.T) {
 // -----------------------------------------------------------------//
 func TestExternalTerminate(t *testing.T) {
 	baseRoutine := runtime.NumGoroutine()
-	mt := Multitasking.NewMultitasking("ovo", nil)
+	mt := Multitasking.NewMultitasking[any]("ovo", nil)
 	mt.Register(GenNumbers, HandleNumber)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -228,11 +228,11 @@ func TestExternalTerminate(t *testing.T) {
 		cancel()
 	}()
 
-	mt.SetErrorCallback(func(ctrl Multitasking.Controller, err error) {
+	mt.SetErrorCallback(func(ctrl Multitasking.Controller[any], err error) {
 		switch ctrl.(type) {
-		case Multitasking.ExecuteController:
+		case Multitasking.ExecuteController[any]:
 			fmt.Println("Execute:", err)
-		case Multitasking.DistributeController:
+		case Multitasking.DistributeController[any]:
 			fmt.Println("Distribute:", err)
 		default:
 			fmt.Println("Unknown Controller:", err)
@@ -269,7 +269,7 @@ func TestExternalTerminate(t *testing.T) {
 }
 
 type TerminateEC struct {
-	*Multitasking.BaseExecuteController
+	*Multitasking.BaseExecuteController[any]
 	n int
 }
 
@@ -285,20 +285,20 @@ func (tec *TerminateEC) T() {
 
 func NewTerminateEC() *TerminateEC {
 	return &TerminateEC{
-		Multitasking.NewBaseExecuteController(),
+		Multitasking.NewBaseExecuteController[any](),
 		0,
 	}
 }
 
 func TestControllerTerminate(t *testing.T) {
-	mt := Multitasking.NewMultitasking("Test", nil)
-	mt.SetErrorCallback(func(c Multitasking.Controller, err error) {
+	mt := Multitasking.NewMultitasking[any]("Test", nil)
+	mt.SetErrorCallback(func(c Multitasking.Controller[any], err error) {
 		fmt.Println(reflect.TypeOf(c), err)
 	})
 	mt.SetController(NewTerminateEC())
 	mt.Register(
 		GenNumbers,
-		func(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) any {
+		func(ec Multitasking.ExecuteController[any], logger zerolog.Logger, i any) any {
 			task := i.(Task)
 			//fmt.Println(task)
 			if task.I > 2000 {
@@ -321,8 +321,8 @@ func TestControllerTerminate(t *testing.T) {
 
 func TestPause(t *testing.T) {
 	baseRoutine := runtime.NumGoroutine()
-	mt := Multitasking.NewMultitasking("ovo", nil)
-	mt.Register(func(dc Multitasking.DistributeController) {
+	mt := Multitasking.NewMultitasking[any]("ovo", nil)
+	mt.Register(func(dc Multitasking.DistributeController[any]) {
 		//dc.Debug(true)
 		final := 0
 		for i := 0; i < 10000; i++ {
@@ -335,7 +335,7 @@ func TestPause(t *testing.T) {
 			final += 1
 
 		}
-	}, func(ec Multitasking.ExecuteController, logger zerolog.Logger, i interface{}) interface{} {
+	}, func(ec Multitasking.ExecuteController[any], logger zerolog.Logger, i any) any {
 		task := i.(Task)
 		//mt.Log(1, "测试日志"+time.Now().String())
 		if task.I == 2000 {
@@ -350,17 +350,17 @@ func TestPause(t *testing.T) {
 		return task.A + task.B
 	})
 	mt.SetResultMiddlewares(
-		func(ec Multitasking.ExecuteController, i interface{}) interface{} {
+		func(ec Multitasking.ExecuteController[any], i any) any {
 			//fmt.Println("Running...")
 
 			return nil
 		},
 	)
-	mt.SetErrorCallback(func(ctrl Multitasking.Controller, err error) {
+	mt.SetErrorCallback(func(ctrl Multitasking.Controller[any], err error) {
 		switch ctrl.(type) {
-		case Multitasking.ExecuteController:
+		case Multitasking.ExecuteController[any]:
 			fmt.Println("Execute:", err)
-		case Multitasking.DistributeController:
+		case Multitasking.DistributeController[any]:
 			fmt.Println("Distribute:", err)
 		default:
 			fmt.Println("Unknown Controller:", err)

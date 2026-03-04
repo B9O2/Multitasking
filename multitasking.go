@@ -255,7 +255,7 @@ func (m *Multitasking[TaskType]) resume() {
 func (m *Multitasking[TaskType]) Run(
 	ctx context.Context,
 	threads uint64,
-) (result []interface{}, err error) {
+) (results []TaskType, err error) {
 	if threads <= 0 {
 		return nil, errors.New("threads should be grant than 0")
 	}
@@ -332,14 +332,14 @@ func (m *Multitasking[TaskType]) Run(
 					m.ec.Terminate()
 				default:
 				}
-				var result Result[TaskType]
+				var res Result[TaskType]
 				var ret TaskType
 				Try(func() {
 
 					if !m.terminating {
 						ret = m.execCallback(m.ec, logger, task.data)
 					} else {
-						result = nil //终止情况下重试任务结果直接置空(nil)
+						res = nil //终止情况下重试任务结果直接置空(nil)
 					}
 
 				}, func(msg string) {
@@ -347,19 +347,19 @@ func (m *Multitasking[TaskType]) Run(
 				}, terminateErrorIgnore)
 
 				//根据返回类型的不同处理
-				if rt, ok := result.(RetryResult[TaskType]); ok {
+				if rt, ok := any(ret).(RetryResult[TaskType]); ok {
 					rt.rawTask = task
 					if len(rt.tasks) <= 0 {
 						rt.tasks = []TaskType{task.data}
 					}
-					result = rt
+					res = rt
 				} else {
-					result = NormalResult[TaskType]{
+					res = NormalResult[TaskType]{
 						rawTask: task,
 						data:    ret,
 					}
 				}
-				resultQueue <- result
+				resultQueue <- res
 				m.threadsDetail.Idle(exid)
 			}
 		}()
@@ -391,7 +391,7 @@ func (m *Multitasking[TaskType]) Run(
 						m.errCallback(m.ec, errors.New(s))
 					}, terminateErrorIgnore)
 				}
-
+				results = append(results, r)
 			}
 		}
 		//m.Log(-2, "[-] result collector closed")
@@ -417,7 +417,7 @@ func (m *Multitasking[TaskType]) Run(
 	resultWg.Wait()
 	//m.Log(-2, "[*]ResultQueue Closed")
 
-	return result, nil
+	return results, nil
 }
 
 func newMultitasking[TaskType any](
