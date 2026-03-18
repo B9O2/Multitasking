@@ -9,12 +9,12 @@ import (
 )
 
 func TestMaaS(t *testing.T) {
-	server := Multitasking.NewMultitasking[int]("MaaS", nil)
-	server.Register(func(dc Multitasking.DistributeController[int]) {
+	server := Multitasking.NewMultitasking[int, int]("MaaS", nil)
+	server.Register(func(dc Multitasking.DistributeController[int, int]) {
 		for {
 			dc.AddTask(rand.Int())
 		}
-	}, func(ec Multitasking.ExecuteController[int], l zerolog.Logger, task int) Multitasking.Result[int] {
+	}, func(ec Multitasking.ExecuteController[int, int], l zerolog.Logger, task int) Multitasking.Result[int, int] {
 		if task%2 == 0 {
 			return ec.Success(task * 2)
 		}

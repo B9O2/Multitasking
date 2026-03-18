@@ -1,37 +1,37 @@
 package Multitasking
 
-type Result[TaskType any] interface {
+type Result[TaskType any, ResultType any] interface {
 	RawTask() Task[TaskType]
 }
 
-type RetryResult[TaskType any] struct {
+type RetryResult[TaskType any, ResultType any] struct {
 	rawTask Task[TaskType]
 	tasks   []TaskType
 }
 
-func (rr RetryResult[TaskType]) RawTask() Task[TaskType] {
+func (rr RetryResult[TaskType, ResultType]) RawTask() Task[TaskType] {
 	return rr.rawTask
 }
 
-func (rr RetryResult[TaskType]) Tasks() []TaskType {
+func (rr RetryResult[TaskType, ResultType]) Tasks() []TaskType {
 	return rr.tasks
 }
 
-type NormalResult[TaskType any] struct {
+type NormalResult[TaskType any, ResultType any] struct {
 	rawTask Task[TaskType]
-	data    TaskType
+	data    ResultType
 }
 
-func (nr NormalResult[TaskType]) RawTask() Task[TaskType] {
+func (nr NormalResult[TaskType, ResultType]) RawTask() Task[TaskType] {
 	return nr.rawTask
 }
 
-func (nr NormalResult[TaskType]) Data() TaskType {
+func (nr NormalResult[TaskType, ResultType]) Data() ResultType {
 	return nr.data
 }
 
-type NullResult[TaskType any] struct{}
+type NullResult[TaskType any, ResultType any] struct{}
 
-func (null NullResult[TaskType]) RawTask() Task[TaskType] {
+func (null NullResult[TaskType, ResultType]) RawTask() Task[TaskType] {
 	return Task[TaskType]{}
 }

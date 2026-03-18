@@ -4,61 +4,61 @@ import (
 	"context"
 )
 
-type Controller[TaskType any] interface {
+type Controller[TaskType any, ResultType any] interface {
 	Terminate()
 	Protect(f func()) error
 	Name() string
 	Debug(bool)
 	Context() context.Context
-	InheritDC() DistributeController[TaskType]
-	Init(*Multitasking[TaskType])
+	InheritDC() DistributeController[TaskType, ResultType]
+	Init(*Multitasking[TaskType, ResultType])
 	Pause()
 	Resume()
 }
 
-type DistributeController[TaskType any] interface {
-	Controller[TaskType]
+type DistributeController[TaskType any, ResultType any] interface {
+	Controller[TaskType, ResultType]
 	AddTask(TaskType)
 	AddTasks(...TaskType)
 }
 
-type ExecuteController[TaskType any] interface {
-	Controller[TaskType]
-	Retry(...TaskType) Result[TaskType]
-	Success(TaskType) Result[TaskType]
-	Null() Result[TaskType]
+type ExecuteController[TaskType any, ResultType any] interface {
+	Controller[TaskType, ResultType]
+	Retry(...TaskType) Result[TaskType, ResultType]
+	Success(ResultType) Result[TaskType, ResultType]
+	Null() Result[TaskType, ResultType]
 }
 
-type MiddlewareController[TaskType any] interface {
-	Controller[TaskType]
+type MiddlewareController[TaskType any, ResultType any] interface {
+	Controller[TaskType, ResultType]
 }
 
 // BaseController 基础控制器，其他控制器都应当继承自此控制器
-type BaseController[TaskType any] struct {
-	mt *Multitasking[TaskType]
+type BaseController[TaskType any, ResultType any] struct {
+	mt *Multitasking[TaskType, ResultType]
 }
 
-func (bc *BaseController[TaskType]) Name() string {
+func (bc *BaseController[TaskType, ResultType]) Name() string {
 	return bc.mt.Name()
 }
 
-func (bc *BaseController[TaskType]) Protect(f func()) error {
+func (bc *BaseController[TaskType, ResultType]) Protect(f func()) error {
 	return bc.mt.protect(f)
 }
 
-func (bc *BaseController[TaskType]) Pause() {
+func (bc *BaseController[TaskType, ResultType]) Pause() {
 	bc.mt.pause()
 }
 
-func (bc *BaseController[TaskType]) Resume() {
+func (bc *BaseController[TaskType, ResultType]) Resume() {
 	bc.mt.resume()
 }
 
-func (bc *BaseController[TaskType]) Debug(d bool) {
+func (bc *BaseController[TaskType, ResultType]) Debug(d bool) {
 	bc.mt.debug = d
 }
 
-func (bc *BaseController[TaskType]) InheritDC() DistributeController[TaskType] {
+func (bc *BaseController[TaskType, ResultType]) InheritDC() DistributeController[TaskType, ResultType] {
 	if bc.mt.inherit != nil {
 		return bc.mt.inherit.dc
 	} else {
@@ -66,71 +66,71 @@ func (bc *BaseController[TaskType]) InheritDC() DistributeController[TaskType] {
 	}
 }
 
-func (bc *BaseController[TaskType]) Init(mt *Multitasking[TaskType]) {
+func (bc *BaseController[TaskType, ResultType]) Init(mt *Multitasking[TaskType, ResultType]) {
 	bc.mt = mt
 }
 
-func (bc *BaseController[TaskType]) Context() context.Context {
+func (bc *BaseController[TaskType, ResultType]) Context() context.Context {
 	return bc.mt.ctx
 }
 
-func NewBaseController[TaskType any]() *BaseController[TaskType] {
-	return &BaseController[TaskType]{}
+func NewBaseController[TaskType any, ResultType any]() *BaseController[TaskType, ResultType] {
+	return &BaseController[TaskType, ResultType]{}
 }
 
 // BaseDistributeController 基础的任务分发控制器
-type BaseDistributeController[TaskType any] struct {
-	*BaseController[TaskType]
+type BaseDistributeController[TaskType any, ResultType any] struct {
+	*BaseController[TaskType, ResultType]
 }
 
-func (bdc *BaseDistributeController[TaskType]) AddTask(task TaskType) {
+func (bdc *BaseDistributeController[TaskType, ResultType]) AddTask(task TaskType) {
 	bdc.mt.addTask(task)
 }
 
-func (bdc *BaseDistributeController[TaskType]) AddTasks(tasks ...TaskType) {
+func (bdc *BaseDistributeController[TaskType, ResultType]) AddTasks(tasks ...TaskType) {
 	for _, task := range tasks {
 		bdc.AddTask(task)
 	}
 }
 
-func (bdc *BaseDistributeController[TaskType]) Terminate() {
+func (bdc *BaseDistributeController[TaskType, ResultType]) Terminate() {
 	//fmt.Println("TERMINATED")
 	bdc.mt.terminating = true
 	panic("multitasking terminated")
 }
 
-func NewBaseDistributeController[TaskType any]() *BaseDistributeController[TaskType] {
-	return &BaseDistributeController[TaskType]{
-		NewBaseController[TaskType](),
+func NewBaseDistributeController[TaskType any, ResultType any]() *BaseDistributeController[TaskType, ResultType] {
+	return &BaseDistributeController[TaskType, ResultType]{
+		NewBaseController[TaskType, ResultType](),
 	}
 }
 
 // BaseExecuteController 基础的任务执行控制器
-type BaseExecuteController[TaskType any] struct {
-	*BaseController[TaskType]
+type BaseExecuteController[TaskType any, ResultType any] struct {
+	*BaseController[TaskType, ResultType]
 }
 
-func (bec *BaseExecuteController[TaskType]) Retry(
+func (bec *BaseExecuteController[TaskType, ResultType]) Retry(
 	tasks ...TaskType,
-) Result[TaskType] {
-	return RetryResult[TaskType]{
+) Result[TaskType, ResultType] {
+	return RetryResult[TaskType, ResultType]{
 		tasks: tasks,
 	}
 }
 
-func (bec *BaseExecuteController[TaskType]) Null() Result[TaskType] {
-	return NullResult[TaskType]{}
+func (bec *BaseExecuteController[TaskType, ResultType]) Null() Result[TaskType, ResultType] {
+	return NullResult[TaskType, ResultType]{}
 }
 
-func (bec *BaseExecuteController[TaskType]) Success(
-	data TaskType,
-) Result[TaskType] {
-	return NormalResult[TaskType]{
+func (bec *BaseExecuteController[TaskType, ResultType]) Success(
+	data ResultType,
+) Result[TaskType, ResultType] {
+	return NormalResult[TaskType, ResultType]{
 		data: data,
 	}
 }
 
-func (bec *BaseExecuteController[TaskType]) Terminate() {
+func (bec *BaseExecuteController[TaskType, ResultType]) Terminate() {
 	defer func() {
 		if r := recover(); r != nil {
 			//fmt.Println("Terminate:", r)
@@ -143,8 +143,8 @@ func (bec *BaseExecuteController[TaskType]) Terminate() {
 
 }
 
-func NewBaseExecuteController[TaskType any]() *BaseExecuteController[TaskType] {
-	return &BaseExecuteController[TaskType]{
-		NewBaseController[TaskType](),
+func NewBaseExecuteController[TaskType any, ResultType any]() *BaseExecuteController[TaskType, ResultType] {
+	return &BaseExecuteController[TaskType, ResultType]{
+		NewBaseController[TaskType, ResultType](),
 	}
 }
