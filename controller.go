@@ -178,30 +178,6 @@ func (bec *BaseExecuteController[TaskType, ResultType]) ThreadID() int64 {
 	return int64(tid)
 }
 
-func (bec *BaseExecuteController[TaskType, ResultType]) WithContext(
-	ctx context.Context,
-) ExecuteController[TaskType, ResultType] {
-	return &BaseExecuteController[TaskType, ResultType]{
-		BaseController: &BaseController[TaskType, ResultType]{
-			mt:     bec.mt,
-			ctx:    ctx,
-			logger: bec.logger,
-		},
-	}
-}
-
-func (bec *BaseExecuteController[TaskType, ResultType]) WithLogger(
-	logger zerolog.Logger,
-) ExecuteController[TaskType, ResultType] {
-	return &BaseExecuteController[TaskType, ResultType]{
-		BaseController: &BaseController[TaskType, ResultType]{
-			mt:     bec.mt,
-			ctx:    bec.ctx,
-			logger: &logger,
-		},
-	}
-}
-
 func (bec *BaseExecuteController[TaskType, ResultType]) Terminate() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -218,5 +194,44 @@ func (bec *BaseExecuteController[TaskType, ResultType]) Terminate() {
 func NewBaseExecuteController[TaskType any, ResultType any]() *BaseExecuteController[TaskType, ResultType] {
 	return &BaseExecuteController[TaskType, ResultType]{
 		NewBaseController[TaskType, ResultType](),
+	}
+}
+
+// StandardExecuteController 框架默认使用的执行控制器
+type StandardExecuteController[TaskType any, ResultType any] struct {
+	*BaseExecuteController[TaskType, ResultType]
+}
+
+func (sec *StandardExecuteController[TaskType, ResultType]) WithContext(
+	ctx context.Context,
+) ExecuteController[TaskType, ResultType] {
+	return &StandardExecuteController[TaskType, ResultType]{
+		BaseExecuteController: &BaseExecuteController[TaskType, ResultType]{
+			BaseController: &BaseController[TaskType, ResultType]{
+				mt:     sec.mt,
+				ctx:    ctx,
+				logger: sec.logger,
+			},
+		},
+	}
+}
+
+func (sec *StandardExecuteController[TaskType, ResultType]) WithLogger(
+	logger zerolog.Logger,
+) ExecuteController[TaskType, ResultType] {
+	return &StandardExecuteController[TaskType, ResultType]{
+		BaseExecuteController: &BaseExecuteController[TaskType, ResultType]{
+			BaseController: &BaseController[TaskType, ResultType]{
+				mt:     sec.mt,
+				ctx:    sec.ctx,
+				logger: &logger,
+			},
+		},
+	}
+}
+
+func NewStandardExecuteController[TaskType any, ResultType any]() *StandardExecuteController[TaskType, ResultType] {
+	return &StandardExecuteController[TaskType, ResultType]{
+		NewBaseExecuteController[TaskType, ResultType](),
 	}
 }

@@ -81,27 +81,27 @@ func TestNoThreadID(t *testing.T) {
 
 // CustomEC 定义一个用户自定义的执行控制器
 type CustomEC[T any, R any] struct {
-	*Multitasking.BaseExecuteController[T, R]
+	*Multitasking.StandardExecuteController[T, R]
 	CustomTag string
 }
 
 func (c *CustomEC[T, R]) WithContext(
 	ctx context.Context,
 ) Multitasking.ExecuteController[T, R] {
-	base := c.BaseExecuteController.WithContext(ctx)
+	base := c.StandardExecuteController.WithContext(ctx)
 	return &CustomEC[T, R]{
-		BaseExecuteController: base.(*Multitasking.BaseExecuteController[T, R]),
-		CustomTag:             c.CustomTag,
+		StandardExecuteController: base.(*Multitasking.StandardExecuteController[T, R]),
+		CustomTag:                 c.CustomTag,
 	}
 }
 
 func (c *CustomEC[T, R]) WithLogger(
 	logger zerolog.Logger,
 ) Multitasking.ExecuteController[T, R] {
-	base := c.BaseExecuteController.WithLogger(logger)
+	base := c.StandardExecuteController.WithLogger(logger)
 	return &CustomEC[T, R]{
-		BaseExecuteController: base.(*Multitasking.BaseExecuteController[T, R]),
-		CustomTag:             c.CustomTag,
+		StandardExecuteController: base.(*Multitasking.StandardExecuteController[T, R]),
+		CustomTag:                 c.CustomTag,
 	}
 }
 
@@ -110,8 +110,8 @@ func TestCustomController(t *testing.T) {
 	mt := Multitasking.NewMultitasking[int, int]("TestCustomController", nil)
 
 	myEC := &CustomEC[int, int]{
-		BaseExecuteController: Multitasking.NewBaseExecuteController[int, int](),
-		CustomTag:             "SpecialWorker",
+		StandardExecuteController: Multitasking.NewStandardExecuteController[int, int](),
+		CustomTag:                 "SpecialWorker",
 	}
 	mt.SetController(myEC)
 

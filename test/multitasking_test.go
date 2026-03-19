@@ -269,7 +269,7 @@ func TestExternalTerminate(t *testing.T) {
 }
 
 type TerminateEC struct {
-	*Multitasking.BaseExecuteController[any, any]
+	*Multitasking.StandardExecuteController[any, any]
 	n int
 }
 
@@ -286,26 +286,26 @@ func (tec *TerminateEC) T() {
 func (tec *TerminateEC) WithContext(
 	ctx context.Context,
 ) Multitasking.ExecuteController[any, any] {
-	base := tec.BaseExecuteController.WithContext(ctx)
+	base := tec.StandardExecuteController.WithContext(ctx)
 	return &TerminateEC{
-		BaseExecuteController: base.(*Multitasking.BaseExecuteController[any, any]),
-		n:                     tec.n,
+		StandardExecuteController: base.(*Multitasking.StandardExecuteController[any, any]),
+		n:                         tec.n,
 	}
 }
 
 func (tec *TerminateEC) WithLogger(
 	logger zerolog.Logger,
 ) Multitasking.ExecuteController[any, any] {
-	base := tec.BaseExecuteController.WithLogger(logger)
+	base := tec.StandardExecuteController.WithLogger(logger)
 	return &TerminateEC{
-		BaseExecuteController: base.(*Multitasking.BaseExecuteController[any, any]),
-		n:                     tec.n,
+		StandardExecuteController: base.(*Multitasking.StandardExecuteController[any, any]),
+		n:                         tec.n,
 	}
 }
 
 func NewTerminateEC() *TerminateEC {
 	return &TerminateEC{
-		Multitasking.NewBaseExecuteController[any, any](),
+		Multitasking.NewStandardExecuteController[any, any](),
 		0,
 	}
 }

@@ -444,7 +444,7 @@ func newMultitasking[TaskType any, ResultType any](
 	}
 
 	dc := NewBaseDistributeController[TaskType, ResultType]()
-	ec := NewBaseExecuteController[TaskType, ResultType]()
+	ec := NewStandardExecuteController[TaskType, ResultType]()
 
 	mt.SetController(dc)
 	mt.SetController(ec)
