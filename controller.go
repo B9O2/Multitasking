@@ -23,6 +23,7 @@ type DistributeController[TaskType any, ResultType any] interface {
 	Controller[TaskType, ResultType]
 	AddTask(TaskType)
 	AddTasks(...TaskType)
+	WithLogger(zerolog.Logger) DistributeController[TaskType, ResultType]
 }
 
 type ExecuteController[TaskType any, ResultType any] interface {
@@ -117,6 +118,18 @@ func (bdc *BaseDistributeController[TaskType, ResultType]) AddTasks(
 ) {
 	for _, task := range tasks {
 		bdc.AddTask(task)
+	}
+}
+
+func (bdc *BaseDistributeController[TaskType, ResultType]) WithLogger(
+	logger zerolog.Logger,
+) DistributeController[TaskType, ResultType] {
+	return &BaseDistributeController[TaskType, ResultType]{
+		BaseController: &BaseController[TaskType, ResultType]{
+			mt:     bdc.mt,
+			ctx:    bdc.ctx,
+			logger: &logger,
+		},
 	}
 }
 

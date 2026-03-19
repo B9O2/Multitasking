@@ -29,7 +29,7 @@ type Multitasking[TaskType any, ResultType any] struct {
 	execCallback      func(ExecuteController[TaskType, ResultType], TaskType) Result[TaskType, ResultType]
 	resultMiddlewares []Middleware[TaskType, ResultType]
 	errCallback       func(Controller[TaskType, ResultType], error)
-	loggerInit        func(uint64, zerolog.Logger) zerolog.Logger
+	loggerInit        func(zerolog.Logger) zerolog.Logger
 
 	//control
 	terminating bool
@@ -178,13 +178,12 @@ func (m *Multitasking[TaskType, ResultType]) SetController(
 }
 
 func (m *Multitasking[TaskType, ResultType]) SetLogger(
-	f func(uint64, zerolog.Logger) zerolog.Logger,
+	f func(zerolog.Logger) zerolog.Logger,
 ) {
 	if f == nil {
-		m.loggerInit = func(tid uint64, l zerolog.Logger) zerolog.Logger {
+		m.loggerInit = func(l zerolog.Logger) zerolog.Logger {
 			return l.Output(os.Stdout).
 				With().
-				Int("thread_id", int(tid)).
 				Timestamp().
 				Logger()
 		}
@@ -242,14 +241,21 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 	}
 
 	//Distribution
+	distributorLogger := m.loggerInit(zerolog.New(nil)).
+		With().
+		Str("component", "distributor").
+		Int("thread_id", -1).
+		Logger()
+	distributorDC := m.dc.WithLogger(distributorLogger)
+
 	go Try(func() {
 		defer func() {
 			TryClose(m.taskQueue)
 			sgw.Wait("SchedulingGate") //确保task里的都被加入到BufferQueue再结束
 		}()
-		m.taskCallback(m.dc)
+		m.taskCallback(distributorDC)
 	}, func(msg string) {
-		m.errCallback(m.dc, errors.New(msg))
+		m.errCallback(distributorDC, errors.New(msg))
 	}, terminateErrorIgnore)
 
 	//SchedulingGate
@@ -275,14 +281,18 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 			bufferQueue <- Task[TaskType]{true, task}
 		}
 	}, func(msg string) {
-		m.errCallback(m.dc, errors.New(msg))
+		m.errCallback(distributorDC, errors.New(msg))
 	}, terminateErrorIgnore)
 
 	//Execution
 	for tid := uint64(0); tid < threads; {
 		exid := tid
 		totalExecWg.Add(1)
-		logger := m.loggerInit(tid, zerolog.New(nil))
+		logger := m.loggerInit(zerolog.New(nil)).
+			With().
+			Str("component", "worker").
+			Int("thread_id", int(tid)).
+			Logger()
 		m.loggers[exid] = logger
 
 		threadCtx := context.WithValue(m.ctx, "thread_id", exid)
@@ -347,13 +357,13 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		defer func() {
 			resultWg.Done()
 		}()
-		collectorLogger := m.loggerInit(uint64(0), zerolog.New(nil)).
+		collectorLogger := m.loggerInit(zerolog.New(nil)).
 			With().
 			Str("component", "collector").
 			Int("thread_id", -1).
-			Timestamp().
 			Logger()
-		collectorEC := m.ec.WithLogger(collectorLogger).WithContext(context.WithValue(m.ctx, "thread_id", uint64(0)))
+		collectorEC := m.ec.WithLogger(collectorLogger).
+			WithContext(context.WithValue(m.ctx, "thread_id", uint64(0)))
 
 		for ret := range resultQueue {
 			if ret == nil {
