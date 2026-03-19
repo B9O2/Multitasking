@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/B9O2/Multitasking"
-	"github.com/rs/zerolog"
 )
 
 type Task struct {
@@ -216,11 +215,11 @@ func TestMultitaskingContext(t *testing.T) {
 func TestExternalTerminate(t *testing.T) {
 	runtime.GC()
 	time.Sleep(100 * time.Millisecond) // 给 runtime 协程一点收尾时间
-	
+
 	buf := make([]byte, 1<<20)
 	n := runtime.Stack(buf, true)
 	fmt.Printf("--- START STACK ---\n%s\n", buf[:n])
-	
+
 	baseRoutine := runtime.NumGoroutine()
 	mt := Multitasking.NewMultitasking[any, any]("ovo", nil)
 	mt.Register(GenNumbers, HandleNumber)
@@ -251,16 +250,16 @@ func TestExternalTerminate(t *testing.T) {
 		return
 	}
 	fmt.Println(run)
-	
+
 	runtime.GC()
 	time.Sleep(100 * time.Millisecond)
 
 	n2 := runtime.Stack(buf, true)
 	fmt.Printf("--- FINISH STACK ---\n%s\n", buf[:n2])
-	
+
 	finishRoutine := runtime.NumGoroutine()
 	fmt.Printf("Total goroutines: %d (Base: %d)\n", finishRoutine, baseRoutine)
-	
+
 	if baseRoutine != finishRoutine {
 		panic(fmt.Sprintf("Routine Error:%d->%d", baseRoutine, finishRoutine))
 	} else {
@@ -269,7 +268,7 @@ func TestExternalTerminate(t *testing.T) {
 }
 
 type TerminateEC struct {
-	*Multitasking.StandardExecuteController[any, any]
+	*Multitasking.BaseExecuteController[any, any]
 	n int
 }
 
@@ -283,29 +282,9 @@ func (tec *TerminateEC) T() {
 
 }
 
-func (tec *TerminateEC) WithContext(
-	ctx context.Context,
-) Multitasking.ExecuteController[any, any] {
-	base := tec.StandardExecuteController.WithContext(ctx)
-	return &TerminateEC{
-		StandardExecuteController: base.(*Multitasking.StandardExecuteController[any, any]),
-		n:                         tec.n,
-	}
-}
-
-func (tec *TerminateEC) WithLogger(
-	logger zerolog.Logger,
-) Multitasking.ExecuteController[any, any] {
-	base := tec.StandardExecuteController.WithLogger(logger)
-	return &TerminateEC{
-		StandardExecuteController: base.(*Multitasking.StandardExecuteController[any, any]),
-		n:                         tec.n,
-	}
-}
-
 func NewTerminateEC() *TerminateEC {
 	return &TerminateEC{
-		Multitasking.NewStandardExecuteController[any, any](),
+		Multitasking.NewBaseExecuteController[any, any](),
 		0,
 	}
 }

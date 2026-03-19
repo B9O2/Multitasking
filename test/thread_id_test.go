@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/B9O2/Multitasking"
-	"github.com/rs/zerolog"
 )
 
 func TestThreadID(t *testing.T) {
@@ -55,54 +54,19 @@ func TestThreadID(t *testing.T) {
 }
 
 func TestNoThreadID(t *testing.T) {
-	mt := Multitasking.NewMultitasking[int, int]("TestNoThreadID", nil)
-	var capturedEC Multitasking.ExecuteController[int, int]
+	// 直接手动实例化一个控制器，不经过 Run 注入，此时 Context 是空的
+	ec := Multitasking.NewBaseExecuteController[int, int]()
 
-	mt.Register(func(dc Multitasking.DistributeController[int, int]) {
-		dc.AddTask(1)
-	}, func(ec Multitasking.ExecuteController[int, int], data int) Multitasking.Result[int, int] {
-		capturedEC = ec
-		return ec.Success(data)
-	})
-
-	_, _ = mt.Run(context.Background(), 1)
-
-	if capturedEC == nil {
-		t.Fatal("Failed to capture ExecuteController")
-	}
-
-	noIdEC := capturedEC.WithContext(context.Background())
-
-	tid := noIdEC.ThreadID()
+	tid := ec.ThreadID()
 	if tid != -1 {
-		t.Errorf("Expected -1 for missing ThreadID context, got %d", tid)
+		t.Errorf("Expected -1 for uninitialized ThreadID context, got %d", tid)
 	}
 }
 
 // CustomEC 定义一个用户自定义的执行控制器
 type CustomEC[T any, R any] struct {
-	*Multitasking.StandardExecuteController[T, R]
+	*Multitasking.BaseExecuteController[T, R]
 	CustomTag string
-}
-
-func (c *CustomEC[T, R]) WithContext(
-	ctx context.Context,
-) Multitasking.ExecuteController[T, R] {
-	base := c.StandardExecuteController.WithContext(ctx)
-	return &CustomEC[T, R]{
-		StandardExecuteController: base.(*Multitasking.StandardExecuteController[T, R]),
-		CustomTag:                 c.CustomTag,
-	}
-}
-
-func (c *CustomEC[T, R]) WithLogger(
-	logger zerolog.Logger,
-) Multitasking.ExecuteController[T, R] {
-	base := c.StandardExecuteController.WithLogger(logger)
-	return &CustomEC[T, R]{
-		StandardExecuteController: base.(*Multitasking.StandardExecuteController[T, R]),
-		CustomTag:                 c.CustomTag,
-	}
 }
 
 func TestCustomController(t *testing.T) {
@@ -110,8 +74,8 @@ func TestCustomController(t *testing.T) {
 	mt := Multitasking.NewMultitasking[int, int]("TestCustomController", nil)
 
 	myEC := &CustomEC[int, int]{
-		StandardExecuteController: Multitasking.NewStandardExecuteController[int, int](),
-		CustomTag:                 "SpecialWorker",
+		BaseExecuteController: Multitasking.NewBaseExecuteController[int, int](),
+		CustomTag:             "SpecialWorker",
 	}
 	mt.SetController(myEC)
 

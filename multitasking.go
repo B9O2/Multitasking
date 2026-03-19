@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"sync"
 
 	"github.com/B9O2/Multitasking/status"
@@ -52,6 +53,62 @@ type Multitasking[TaskType any, ResultType any] struct {
 
 	//extra
 	shield *Shield.Shield
+}
+
+func (m *Multitasking[TaskType, ResultType]) forkController(
+	ctrl Controller[TaskType, ResultType],
+	ctx context.Context,
+	logger *zerolog.Logger,
+) Controller[TaskType, ResultType] {
+	origPtr := reflect.ValueOf(ctrl)
+	origElem := origPtr.Elem()
+
+	copyPtr := reflect.New(origElem.Type())
+	copyElem := copyPtr.Elem()
+
+	copyElem.Set(origElem)
+
+	m.relinkBaseController(copyElem, ctx, logger)
+
+	// 转换回接口
+	newCtrl := copyPtr.Interface().(Controller[TaskType, ResultType])
+
+	return newCtrl
+}
+
+// relinkBaseController 递归查找并替换嵌入的 BaseController 指针
+func (m *Multitasking[TaskType, ResultType]) relinkBaseController(
+	v reflect.Value,
+	ctx context.Context,
+	logger *zerolog.Logger,
+) {
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+
+		if f.Type() == reflect.TypeFor[*BaseController[TaskType, ResultType]]() {
+			// 创建一个新的 BaseController 实例，确保状态独立
+			newBase := &BaseController[TaskType, ResultType]{
+				mt:     m,
+				ctx:    ctx,
+				logger: logger,
+			}
+			f.Set(reflect.ValueOf(newBase))
+			return
+		}
+
+		if f.Kind() == reflect.Struct && v.Type().Field(i).Anonymous {
+			m.relinkBaseController(f, ctx, logger)
+		}
+
+		if f.Kind() == reflect.Pointer && !f.IsNil() &&
+			v.Type().Field(i).Anonymous {
+			pkgPtr := reflect.New(f.Elem().Type())
+			pkgElem := pkgPtr.Elem()
+			pkgElem.Set(f.Elem())
+			f.Set(pkgPtr)
+			m.relinkBaseController(pkgElem, ctx, logger)
+		}
+	}
 }
 
 func (m *Multitasking[TaskType, ResultType]) init(
@@ -246,7 +303,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		Str("component", "distributor").
 		Int("thread_id", -1).
 		Logger()
-	distributorDC := m.dc.WithLogger(distributorLogger)
+	distributorDC := m.forkController(m.dc, m.ctx, &distributorLogger).(DistributeController[TaskType, ResultType])
 
 	go Try(func() {
 		defer func() {
@@ -296,7 +353,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		m.loggers[exid] = logger
 
 		threadCtx := context.WithValue(m.ctx, "thread_id", exid)
-		workerEC := m.ec.WithContext(threadCtx).WithLogger(logger)
+		workerEC := m.forkController(m.ec, threadCtx, &logger).(ExecuteController[TaskType, ResultType])
 
 		go func() {
 			defer func() {
@@ -362,8 +419,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 			Str("component", "collector").
 			Int("thread_id", -1).
 			Logger()
-		collectorEC := m.ec.WithLogger(collectorLogger).
-			WithContext(context.WithValue(m.ctx, "thread_id", uint64(0)))
+		collectorEC := m.forkController(m.ec, context.WithValue(m.ctx, "thread_id", uint64(0)), &collectorLogger).(ExecuteController[TaskType, ResultType])
 
 		for ret := range resultQueue {
 			if ret == nil {
@@ -444,7 +500,7 @@ func newMultitasking[TaskType any, ResultType any](
 	}
 
 	dc := NewBaseDistributeController[TaskType, ResultType]()
-	ec := NewStandardExecuteController[TaskType, ResultType]()
+	ec := NewBaseExecuteController[TaskType, ResultType]()
 
 	mt.SetController(dc)
 	mt.SetController(ec)

@@ -17,13 +17,13 @@ type Controller[TaskType any, ResultType any] interface {
 	Init(*Multitasking[TaskType, ResultType])
 	Pause()
 	Resume()
+	setInternal(context.Context, *zerolog.Logger)
 }
 
 type DistributeController[TaskType any, ResultType any] interface {
 	Controller[TaskType, ResultType]
 	AddTask(TaskType)
 	AddTasks(...TaskType)
-	WithLogger(zerolog.Logger) DistributeController[TaskType, ResultType]
 }
 
 type ExecuteController[TaskType any, ResultType any] interface {
@@ -31,8 +31,6 @@ type ExecuteController[TaskType any, ResultType any] interface {
 	Retry(...TaskType) Result[TaskType, ResultType]
 	Success(ResultType) Result[TaskType, ResultType]
 	Null() Result[TaskType, ResultType]
-	WithContext(context.Context) ExecuteController[TaskType, ResultType]
-	WithLogger(zerolog.Logger) ExecuteController[TaskType, ResultType]
 	ThreadID() int64
 }
 
@@ -98,6 +96,11 @@ func (bc *BaseController[TaskType, ResultType]) Logger() zerolog.Logger {
 	return zerolog.New(nil)
 }
 
+func (bc *BaseController[TaskType, ResultType]) setInternal(ctx context.Context, logger *zerolog.Logger) {
+	bc.ctx = ctx
+	bc.logger = logger
+}
+
 func NewBaseController[TaskType any, ResultType any]() *BaseController[TaskType, ResultType] {
 	return &BaseController[TaskType, ResultType]{}
 }
@@ -118,18 +121,6 @@ func (bdc *BaseDistributeController[TaskType, ResultType]) AddTasks(
 ) {
 	for _, task := range tasks {
 		bdc.AddTask(task)
-	}
-}
-
-func (bdc *BaseDistributeController[TaskType, ResultType]) WithLogger(
-	logger zerolog.Logger,
-) DistributeController[TaskType, ResultType] {
-	return &BaseDistributeController[TaskType, ResultType]{
-		BaseController: &BaseController[TaskType, ResultType]{
-			mt:     bdc.mt,
-			ctx:    bdc.ctx,
-			logger: &logger,
-		},
 	}
 }
 
@@ -194,44 +185,5 @@ func (bec *BaseExecuteController[TaskType, ResultType]) Terminate() {
 func NewBaseExecuteController[TaskType any, ResultType any]() *BaseExecuteController[TaskType, ResultType] {
 	return &BaseExecuteController[TaskType, ResultType]{
 		NewBaseController[TaskType, ResultType](),
-	}
-}
-
-// StandardExecuteController 框架默认使用的执行控制器
-type StandardExecuteController[TaskType any, ResultType any] struct {
-	*BaseExecuteController[TaskType, ResultType]
-}
-
-func (sec *StandardExecuteController[TaskType, ResultType]) WithContext(
-	ctx context.Context,
-) ExecuteController[TaskType, ResultType] {
-	return &StandardExecuteController[TaskType, ResultType]{
-		BaseExecuteController: &BaseExecuteController[TaskType, ResultType]{
-			BaseController: &BaseController[TaskType, ResultType]{
-				mt:     sec.mt,
-				ctx:    ctx,
-				logger: sec.logger,
-			},
-		},
-	}
-}
-
-func (sec *StandardExecuteController[TaskType, ResultType]) WithLogger(
-	logger zerolog.Logger,
-) ExecuteController[TaskType, ResultType] {
-	return &StandardExecuteController[TaskType, ResultType]{
-		BaseExecuteController: &BaseExecuteController[TaskType, ResultType]{
-			BaseController: &BaseController[TaskType, ResultType]{
-				mt:     sec.mt,
-				ctx:    sec.ctx,
-				logger: &logger,
-			},
-		},
-	}
-}
-
-func NewStandardExecuteController[TaskType any, ResultType any]() *StandardExecuteController[TaskType, ResultType] {
-	return &StandardExecuteController[TaskType, ResultType]{
-		NewBaseExecuteController[TaskType, ResultType](),
 	}
 }
