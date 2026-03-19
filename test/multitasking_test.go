@@ -20,7 +20,6 @@ var m = map[int]bool{}
 
 func FastTasks(
 	dc Multitasking.DistributeController[any, any],
-	tc Multitasking.ThreadController,
 ) {
 	//dc.Debug(true)
 	for i := 0; i < 40; i++ {
@@ -33,7 +32,6 @@ func FastTasks(
 
 func GenNumbers(
 	dc Multitasking.DistributeController[any, any],
-	tc Multitasking.ThreadController,
 ) {
 	//dc.Debug(true)
 	final := 0
@@ -49,7 +47,6 @@ func GenNumbers(
 
 func GenNumbersTerminate(
 	dc Multitasking.DistributeController[any, any],
-	tc Multitasking.ThreadController,
 ) {
 	dc.Debug(true)
 	final := 0
@@ -116,7 +113,7 @@ func TestMultitasking(t *testing.T) {
 	mt := Multitasking.NewMultitasking[any, any]("Test", nil)
 	tests := []struct {
 		name         string
-		distribution func(dc Multitasking.DistributeController[any, any], tc Multitasking.ThreadController)
+		distribution func(dc Multitasking.DistributeController[any, any])
 		exec         func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any]
 		middlewares  []Multitasking.Middleware[any, any]
 		threads      uint64
@@ -138,7 +135,7 @@ func TestMultitasking(t *testing.T) {
 			distribution: FastTasks,
 			exec:         AddNumber,
 			middlewares: []Multitasking.Middleware[any, any]{
-				func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
+				func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
 					ec.Terminate()
 					return ec.Success(i)
 				},
@@ -150,7 +147,7 @@ func TestMultitasking(t *testing.T) {
 			distribution: GenNumbers,
 			exec:         RetryNumber,
 			middlewares: []Multitasking.Middleware[any, any]{
-				func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
+				func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
 					ec.Terminate()
 					return ec.Success(i)
 				},
@@ -162,7 +159,7 @@ func TestMultitasking(t *testing.T) {
 			distribution: GenNumbers,
 			exec:         RetryNumber,
 			middlewares: []Multitasking.Middleware[any, any]{
-				func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
+				func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
 					time.Sleep(1 * time.Second)
 					return ec.Success(i)
 				},
@@ -336,7 +333,7 @@ func TestPause(t *testing.T) {
 	baseRoutine := runtime.NumGoroutine()
 	mt := Multitasking.NewMultitasking[any, any]("ovo", nil)
 	mt.Register(
-		func(dc Multitasking.DistributeController[any, any], tc Multitasking.ThreadController) {
+		func(dc Multitasking.DistributeController[any, any]) {
 			//dc.Debug(true)
 			for i := 0; i < 10000; i++ {
 
@@ -364,7 +361,7 @@ func TestPause(t *testing.T) {
 		},
 	)
 	mt.SetResultMiddlewares(
-		func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
+		func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
 			//fmt.Println("Running...")
 
 			return ec.Null()

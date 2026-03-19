@@ -17,7 +17,7 @@ func TestThreadID(t *testing.T) {
 	threadIDs := make(map[int64]bool)
 
 	mt.Register(
-		func(dc Multitasking.DistributeController[int, int], tc Multitasking.ThreadController) {
+		func(dc Multitasking.DistributeController[int, int]) {
 			for i := 0; i < 100; i++ {
 				dc.AddTask(i)
 			}
@@ -77,7 +77,7 @@ func TestCustomController(t *testing.T) {
 	recordedIDs := make(map[int64]bool)
 
 	mt.Register(
-		func(dc Multitasking.DistributeController[int, int], tc Multitasking.ThreadController) {
+		func(dc Multitasking.DistributeController[int, int]) {
 			for i := 0; i < 50; i++ {
 				dc.AddTask(i)
 			}
@@ -139,7 +139,7 @@ func TestThreadIsolationProof(t *testing.T) {
 	failed := false
 
 	mt.Register(
-		func(dc Multitasking.DistributeController[int, int], tc Multitasking.ThreadController) {
+		func(dc Multitasking.DistributeController[int, int]) {
 			for i := 0; i < 200; i++ {
 				dc.AddTask(i)
 			}

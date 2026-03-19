@@ -25,7 +25,7 @@ type Multitasking[TaskType any, ResultType any] struct {
 	inherit *Multitasking[TaskType, ResultType]
 
 	//callback
-	taskCallback      func(DistributeController[TaskType, ResultType], ThreadController)
+	taskCallback      func(DistributeController[TaskType, ResultType])
 	execCallback      func(ExecuteController[TaskType, ResultType], ThreadController, TaskType) Result[TaskType, ResultType]
 	resultMiddlewares []Middleware[TaskType, ResultType]
 	errCallback       func(Controller[TaskType, ResultType], error)
@@ -193,7 +193,7 @@ func (m *Multitasking[TaskType, ResultType]) SetLogger(
 }
 
 func (m *Multitasking[TaskType, ResultType]) Register(
-	taskFunc func(DistributeController[TaskType, ResultType], ThreadController),
+	taskFunc func(DistributeController[TaskType, ResultType]),
 	execFunc func(ExecuteController[TaskType, ResultType], ThreadController, TaskType) Result[TaskType, ResultType],
 ) {
 	m.taskCallback = taskFunc
@@ -251,11 +251,8 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 			Str("component", "distributor").
 			Int("thread_id", -1).
 			Logger()
-		distributorTC := &baseThreadController{
-			tid:    -1,
-			logger: distributorLogger,
-		}
-		m.taskCallback(m.dc, distributorTC)
+		m.dc.SetLogger(distributorLogger)
+		m.taskCallback(m.dc)
 	}, func(msg string) {
 		m.errCallback(m.dc, errors.New(msg))
 	}, terminateErrorIgnore)
@@ -363,16 +360,6 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 			resultWg.Done()
 		}()
 
-		collectorLogger := m.loggerInit(zerolog.New(nil)).
-			With().
-			Str("component", "collector").
-			Int("thread_id", -1).
-			Logger()
-		collectorTC := &baseThreadController{
-			tid:    -1,
-			logger: collectorLogger,
-		}
-
 		for ret := range resultQueue {
 			if ret == nil {
 				continue
@@ -386,7 +373,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 				for _, rm := range m.resultMiddlewares {
 					Try(func() {
 						if currentNr, ok := ret.(NormalResult[TaskType, ResultType]); ok {
-							ret = rm(m.ec, collectorTC, currentNr.Data())
+							ret = rm(m.ec, currentNr.Data())
 						}
 					}, func(s string) {
 						m.errCallback(m.ec, errors.New(s))

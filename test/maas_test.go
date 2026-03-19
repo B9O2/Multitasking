@@ -9,7 +9,7 @@ import (
 
 func TestMaaS(t *testing.T) {
 	server := Multitasking.NewMultitasking[int, int]("MaaS", nil)
-	server.Register(func(dc Multitasking.DistributeController[int, int], tc Multitasking.ThreadController) {
+	server.Register(func(dc Multitasking.DistributeController[int, int]) {
 		for {
 			dc.AddTask(rand.Int())
 		}

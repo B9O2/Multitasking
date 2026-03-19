@@ -14,6 +14,8 @@ type Controller[TaskType any, ResultType any] interface {
 	Context() context.Context
 	InheritDC() DistributeController[TaskType, ResultType]
 	Init(*Multitasking[TaskType, ResultType])
+	Logger() zerolog.Logger
+	SetLogger(zerolog.Logger)
 	Pause()
 	Resume()
 }
@@ -28,7 +30,7 @@ type baseThreadController struct {
 	logger zerolog.Logger
 }
 
-func (btc *baseThreadController) ThreadID() int64 { return btc.tid }
+func (btc *baseThreadController) ThreadID() int64        { return btc.tid }
 func (btc *baseThreadController) Logger() zerolog.Logger { return btc.logger }
 
 type DistributeController[TaskType any, ResultType any] interface {
@@ -50,7 +52,8 @@ type MiddlewareController[TaskType any, ResultType any] interface {
 
 // BaseController 基础控制器，其他控制器都应当继承自此控制器
 type BaseController[TaskType any, ResultType any] struct {
-	mt *Multitasking[TaskType, ResultType]
+	mt     *Multitasking[TaskType, ResultType]
+	logger zerolog.Logger
 }
 
 func (bc *BaseController[TaskType, ResultType]) Name() string {
@@ -89,6 +92,14 @@ func (bc *BaseController[TaskType, ResultType]) Init(
 
 func (bc *BaseController[TaskType, ResultType]) Context() context.Context {
 	return bc.mt.ctx
+}
+
+func (bc *BaseController[TaskType, ResultType]) Logger() zerolog.Logger {
+	return bc.logger
+}
+
+func (bc *BaseController[TaskType, ResultType]) SetLogger(l zerolog.Logger) {
+	bc.logger = l
 }
 
 func NewBaseController[TaskType any, ResultType any]() *BaseController[TaskType, ResultType] {
