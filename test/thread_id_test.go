@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/B9O2/Multitasking"
 )
@@ -131,5 +132,43 @@ func TestCustomController(t *testing.T) {
 			numThreads,
 			len(recordedIDs),
 		)
+	}
+}
+
+func TestThreadIsolationProof(t *testing.T) {
+	numThreads := uint64(50) // 增加并发压力
+	mt := Multitasking.NewMultitasking[int, int]("IsolationProof", nil)
+
+	var mu sync.Mutex
+	failed := false
+
+	mt.Register(func(dc Multitasking.DistributeController[int, int]) {
+		for i := 0; i < 200; i++ {
+			dc.AddTask(i)
+		}
+	}, func(ec Multitasking.ExecuteController[int, int], data int) Multitasking.Result[int, int] {
+		expectedID := ec.ThreadID()
+
+		time.Sleep(10 * time.Millisecond)
+
+		actualID := ec.ThreadID()
+
+		if expectedID != actualID {
+			mu.Lock()
+			failed = true
+			mu.Unlock()
+		}
+
+		return ec.Success(data)
+	})
+
+	_, _ = mt.Run(context.Background(), numThreads)
+
+	if failed {
+		t.Error(
+			"PROVED: Thread identity was overwritten! The isolation is failing.",
+		)
+	} else {
+		t.Log("PROVED: Thread identity is perfectly isolated.")
 	}
 }
