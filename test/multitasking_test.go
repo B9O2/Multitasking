@@ -18,7 +18,10 @@ type Task struct {
 
 var m = map[int]bool{}
 
-func FastTasks(dc Multitasking.DistributeController[any, any]) {
+func FastTasks(
+	dc Multitasking.DistributeController[any, any],
+	tc Multitasking.ThreadController,
+) {
 	//dc.Debug(true)
 	for i := 0; i < 40; i++ {
 		dc.AddTask(Task{
@@ -28,7 +31,10 @@ func FastTasks(dc Multitasking.DistributeController[any, any]) {
 	}
 }
 
-func GenNumbers(dc Multitasking.DistributeController[any, any]) {
+func GenNumbers(
+	dc Multitasking.DistributeController[any, any],
+	tc Multitasking.ThreadController,
+) {
 	//dc.Debug(true)
 	final := 0
 	for i := 0; i < 1000; i++ {
@@ -41,7 +47,10 @@ func GenNumbers(dc Multitasking.DistributeController[any, any]) {
 	}
 }
 
-func GenNumbersTerminate(dc Multitasking.DistributeController[any, any]) {
+func GenNumbersTerminate(
+	dc Multitasking.DistributeController[any, any],
+	tc Multitasking.ThreadController,
+) {
 	dc.Debug(true)
 	final := 0
 	for i := 0; i < 10000; i++ {
@@ -59,6 +68,7 @@ func GenNumbersTerminate(dc Multitasking.DistributeController[any, any]) {
 
 func AddNumber(
 	ec Multitasking.ExecuteController[any, any],
+	tc Multitasking.ThreadController,
 	i any,
 ) Multitasking.Result[any, any] {
 	task := i.(Task)
@@ -67,6 +77,7 @@ func AddNumber(
 
 func RetryNumber(
 	ec Multitasking.ExecuteController[any, any],
+	tc Multitasking.ThreadController,
 	i any,
 ) Multitasking.Result[any, any] {
 	task := i.(Task)
@@ -88,6 +99,7 @@ func RetryNumber(
 
 func HandleNumber(
 	ec Multitasking.ExecuteController[any, any],
+	tc Multitasking.ThreadController,
 	i any,
 ) Multitasking.Result[any, any] {
 	task := i.(Task)
@@ -104,8 +116,8 @@ func TestMultitasking(t *testing.T) {
 	mt := Multitasking.NewMultitasking[any, any]("Test", nil)
 	tests := []struct {
 		name         string
-		distribution func(dc Multitasking.DistributeController[any, any])
-		exec         func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any]
+		distribution func(dc Multitasking.DistributeController[any, any], tc Multitasking.ThreadController)
+		exec         func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any]
 		middlewares  []Multitasking.Middleware[any, any]
 		threads      uint64
 	}{
@@ -126,7 +138,7 @@ func TestMultitasking(t *testing.T) {
 			distribution: FastTasks,
 			exec:         AddNumber,
 			middlewares: []Multitasking.Middleware[any, any]{
-				func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
+				func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
 					ec.Terminate()
 					return ec.Success(i)
 				},
@@ -138,7 +150,7 @@ func TestMultitasking(t *testing.T) {
 			distribution: GenNumbers,
 			exec:         RetryNumber,
 			middlewares: []Multitasking.Middleware[any, any]{
-				func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
+				func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
 					ec.Terminate()
 					return ec.Success(i)
 				},
@@ -150,7 +162,7 @@ func TestMultitasking(t *testing.T) {
 			distribution: GenNumbers,
 			exec:         RetryNumber,
 			middlewares: []Multitasking.Middleware[any, any]{
-				func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
+				func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
 					time.Sleep(1 * time.Second)
 					return ec.Success(i)
 				},
@@ -233,16 +245,18 @@ func TestExternalTerminate(t *testing.T) {
 		cancel()
 	}()
 
-	mt.SetErrorCallback(func(ctrl Multitasking.Controller[any, any], err error) {
-		switch ctrl.(type) {
-		case Multitasking.ExecuteController[any, any]:
-			fmt.Println("Execute:", err)
-		case Multitasking.DistributeController[any, any]:
-			fmt.Println("Distribute:", err)
-		default:
-			fmt.Println("Unknown Controller:", err)
-		}
-	})
+	mt.SetErrorCallback(
+		func(ctrl Multitasking.Controller[any, any], err error) {
+			switch ctrl.(type) {
+			case Multitasking.ExecuteController[any, any]:
+				fmt.Println("Execute:", err)
+			case Multitasking.DistributeController[any, any]:
+				fmt.Println("Distribute:", err)
+			default:
+				fmt.Println("Unknown Controller:", err)
+			}
+		},
+	)
 
 	fmt.Println(mt)
 	run, err := mt.Run(ctx, 100)
@@ -297,7 +311,7 @@ func TestControllerTerminate(t *testing.T) {
 	mt.SetController(NewTerminateEC())
 	mt.Register(
 		GenNumbers,
-		func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
+		func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
 			task := i.(Task)
 			//fmt.Println(task)
 			if task.I > 2000 {
@@ -321,50 +335,53 @@ func TestControllerTerminate(t *testing.T) {
 func TestPause(t *testing.T) {
 	baseRoutine := runtime.NumGoroutine()
 	mt := Multitasking.NewMultitasking[any, any]("ovo", nil)
-	mt.Register(func(dc Multitasking.DistributeController[any, any]) {
-		//dc.Debug(true)
-		final := 0
-		for i := 0; i < 10000; i++ {
+	mt.Register(
+		func(dc Multitasking.DistributeController[any, any], tc Multitasking.ThreadController) {
+			//dc.Debug(true)
+			for i := 0; i < 10000; i++ {
 
-			dc.AddTask(Task{
-				A: rand.Int(),
-				B: rand.Int(),
-				I: i,
-			})
-			final += 1
+				dc.AddTask(Task{
+					A: rand.Int(),
+					B: rand.Int(),
+					I: i,
+				})
 
-		}
-	}, func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
-		task := i.(Task)
-		//mt.Log(1, "测试日志"+time.Now().String())
-		if task.I == 2000 {
-			fmt.Println(">>>尝试暂停")
-			ec.Pause()
-			fmt.Println(">>>已暂停")
-			time.Sleep(3 * time.Second)
-			fmt.Println(">>>尝试恢复")
-			ec.Resume()
-			fmt.Println(">>>已恢复")
-		}
-		return ec.Success(task.A + task.B)
-	})
+			}
+		},
+		func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
+			task := i.(Task)
+			//mt.Log(1, "测试日志"+time.Now().String())
+			if task.I == 2000 {
+				fmt.Println(">>>尝试暂停")
+				ec.Pause()
+				fmt.Println(">>>已暂停")
+				time.Sleep(3 * time.Second)
+				fmt.Println(">>>尝试恢复")
+				ec.Resume()
+				fmt.Println(">>>已恢复")
+			}
+			return ec.Success(task.A + task.B)
+		},
+	)
 	mt.SetResultMiddlewares(
-		func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
+		func(ec Multitasking.ExecuteController[any, any], tc Multitasking.ThreadController, i any) Multitasking.Result[any, any] {
 			//fmt.Println("Running...")
 
 			return ec.Null()
 		},
 	)
-	mt.SetErrorCallback(func(ctrl Multitasking.Controller[any, any], err error) {
-		switch ctrl.(type) {
-		case Multitasking.ExecuteController[any, any]:
-			fmt.Println("Execute:", err)
-		case Multitasking.DistributeController[any, any]:
-			fmt.Println("Distribute:", err)
-		default:
-			fmt.Println("Unknown Controller:", err)
-		}
-	})
+	mt.SetErrorCallback(
+		func(ctrl Multitasking.Controller[any, any], err error) {
+			switch ctrl.(type) {
+			case Multitasking.ExecuteController[any, any]:
+				fmt.Println("Execute:", err)
+			case Multitasking.DistributeController[any, any]:
+				fmt.Println("Distribute:", err)
+			default:
+				fmt.Println("Unknown Controller:", err)
+			}
+		},
+	)
 
 	fmt.Println(mt)
 	run, err := mt.Run(context.Background(), 100)

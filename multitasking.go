@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"sync"
 
 	"github.com/B9O2/Multitasking/status"
@@ -26,8 +25,8 @@ type Multitasking[TaskType any, ResultType any] struct {
 	inherit *Multitasking[TaskType, ResultType]
 
 	//callback
-	taskCallback      func(DistributeController[TaskType, ResultType])
-	execCallback      func(ExecuteController[TaskType, ResultType], TaskType) Result[TaskType, ResultType]
+	taskCallback      func(DistributeController[TaskType, ResultType], ThreadController)
+	execCallback      func(ExecuteController[TaskType, ResultType], ThreadController, TaskType) Result[TaskType, ResultType]
 	resultMiddlewares []Middleware[TaskType, ResultType]
 	errCallback       func(Controller[TaskType, ResultType], error)
 	loggerInit        func(zerolog.Logger) zerolog.Logger
@@ -53,68 +52,6 @@ type Multitasking[TaskType any, ResultType any] struct {
 
 	//extra
 	shield *Shield.Shield
-}
-
-func (m *Multitasking[TaskType, ResultType]) forkController(
-	ctrl Controller[TaskType, ResultType],
-	ctx context.Context,
-	logger *zerolog.Logger,
-) Controller[TaskType, ResultType] {
-	if ctrl == nil {
-		return nil
-	}
-
-	origPtr := reflect.ValueOf(ctrl)
-	if origPtr.Kind() != reflect.Ptr || origPtr.IsNil() {
-		return ctrl
-	}
-	origElem := origPtr.Elem()
-
-	copyPtr := reflect.New(origElem.Type())
-	copyElem := copyPtr.Elem()
-
-	copyElem.Set(origElem)
-
-	m.relinkBaseController(copyElem, ctx, logger)
-
-	newCtrl := copyPtr.Interface().(Controller[TaskType, ResultType])
-
-	return newCtrl
-}
-
-func (m *Multitasking[TaskType, ResultType]) relinkBaseController(
-	v reflect.Value,
-	ctx context.Context,
-	logger *zerolog.Logger,
-) {
-	for i := 0; i < v.NumField(); i++ {
-		f := v.Field(i)
-
-		if f.Type() == reflect.TypeFor[*BaseController[TaskType, ResultType]]() {
-			newBase := &BaseController[TaskType, ResultType]{
-				mt:     m,
-				ctx:    ctx,
-				logger: logger,
-			}
-			f.Set(reflect.ValueOf(newBase))
-			continue
-		}
-
-		if f.Kind() == reflect.Struct && v.Type().Field(i).Anonymous {
-			m.relinkBaseController(f, ctx, logger)
-			continue
-		}
-
-		if f.Kind() == reflect.Pointer && !f.IsNil() &&
-			v.Type().Field(i).Anonymous {
-			pkgPtr := reflect.New(f.Elem().Type())
-			pkgElem := pkgPtr.Elem()
-			pkgElem.Set(f.Elem())
-			f.Set(pkgPtr) // 替换指针
-			m.relinkBaseController(pkgElem, ctx, logger)
-			continue
-		}
-	}
 }
 
 func (m *Multitasking[TaskType, ResultType]) init(
@@ -256,8 +193,8 @@ func (m *Multitasking[TaskType, ResultType]) SetLogger(
 }
 
 func (m *Multitasking[TaskType, ResultType]) Register(
-	taskFunc func(DistributeController[TaskType, ResultType]),
-	execFunc func(ExecuteController[TaskType, ResultType], TaskType) Result[TaskType, ResultType],
+	taskFunc func(DistributeController[TaskType, ResultType], ThreadController),
+	execFunc func(ExecuteController[TaskType, ResultType], ThreadController, TaskType) Result[TaskType, ResultType],
 ) {
 	m.taskCallback = taskFunc
 	m.execCallback = execFunc
@@ -304,21 +241,23 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 	}
 
 	//Distribution
-	distributorLogger := m.loggerInit(zerolog.New(nil)).
-		With().
-		Str("component", "distributor").
-		Int("thread_id", -1).
-		Logger()
-	distributorDC := m.forkController(m.dc, m.ctx, &distributorLogger).(DistributeController[TaskType, ResultType])
-
 	go Try(func() {
 		defer func() {
 			TryClose(m.taskQueue)
 			sgw.Wait("SchedulingGate") //确保task里的都被加入到BufferQueue再结束
 		}()
-		m.taskCallback(distributorDC)
+		distributorLogger := m.loggerInit(zerolog.New(nil)).
+			With().
+			Str("component", "distributor").
+			Int("thread_id", -1).
+			Logger()
+		distributorTC := &baseThreadController{
+			tid:    -1,
+			logger: distributorLogger,
+		}
+		m.taskCallback(m.dc, distributorTC)
 	}, func(msg string) {
-		m.errCallback(distributorDC, errors.New(msg))
+		m.errCallback(m.dc, errors.New(msg))
 	}, terminateErrorIgnore)
 
 	//SchedulingGate
@@ -344,7 +283,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 			bufferQueue <- Task[TaskType]{true, task}
 		}
 	}, func(msg string) {
-		m.errCallback(distributorDC, errors.New(msg))
+		m.errCallback(m.dc, errors.New(msg))
 	}, terminateErrorIgnore)
 
 	//Execution
@@ -358,32 +297,35 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 			Logger()
 		m.loggers[exid] = logger
 
-		threadCtx := context.WithValue(m.ctx, "thread_id", exid)
-		workerEC := m.forkController(m.ec, threadCtx, &logger).(ExecuteController[TaskType, ResultType])
-
 		go func() {
 			defer func() {
 				totalExecWg.Done()
 				//m.Log(-1, fmt.Sprintf("[-] task execute closed (%d)", exid))
 			}()
+
+			workerTC := &baseThreadController{
+				tid:    int64(exid),
+				logger: logger,
+			}
+
 			for task := range bufferQueue {
 				m.threadsDetail.Working(exid)
 				m.threadsDetail.Add(exid, 1)
 				//m.Log(-1, fmt.Sprintf("[>]DC: task.data: %v", task))
 				select {
-				case <-workerEC.Context().Done():
-					workerEC.Terminate()
+				case <-m.ctx.Done():
+					m.ec.Terminate()
 				default:
 				}
 				var res Result[TaskType, ResultType]
 				Try(func() {
 
 					if !m.terminating {
-						res = m.execCallback(workerEC, task.data)
+						res = m.execCallback(m.ec, workerTC, task.data)
 					}
 
 				}, func(msg string) {
-					m.errCallback(workerEC, errors.New(msg))
+					m.errCallback(m.ec, errors.New(msg))
 				}, terminateErrorIgnore)
 
 				//根据返回类型的不同处理
@@ -420,12 +362,16 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		defer func() {
 			resultWg.Done()
 		}()
+
 		collectorLogger := m.loggerInit(zerolog.New(nil)).
 			With().
 			Str("component", "collector").
 			Int("thread_id", -1).
 			Logger()
-		collectorEC := m.forkController(m.ec, context.WithValue(m.ctx, "thread_id", uint64(0)), &collectorLogger).(ExecuteController[TaskType, ResultType])
+		collectorTC := &baseThreadController{
+			tid:    -1,
+			logger: collectorLogger,
+		}
 
 		for ret := range resultQueue {
 			if ret == nil {
@@ -440,10 +386,10 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 				for _, rm := range m.resultMiddlewares {
 					Try(func() {
 						if currentNr, ok := ret.(NormalResult[TaskType, ResultType]); ok {
-							ret = rm(collectorEC, currentNr.Data())
+							ret = rm(m.ec, collectorTC, currentNr.Data())
 						}
 					}, func(s string) {
-						m.errCallback(collectorEC, errors.New(s))
+						m.errCallback(m.ec, errors.New(s))
 					}, terminateErrorIgnore)
 				}
 			}
@@ -481,6 +427,8 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 	//m.Log(-2, "[*]Retry Closed")
 	TryClose(bufferQueue)
 	//m.Log(-2, "[*]BufferQueue Closed")
+	m.ec.Terminate()
+	//m.Log(-2, "[*]EC Terminated")
 	totalExecWg.Wait()
 	//m.Log(-2, "[*]Total Task Done")
 	sgw.Close()

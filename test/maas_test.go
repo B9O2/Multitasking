@@ -9,11 +9,11 @@ import (
 
 func TestMaaS(t *testing.T) {
 	server := Multitasking.NewMultitasking[int, int]("MaaS", nil)
-	server.Register(func(dc Multitasking.DistributeController[int, int]) {
+	server.Register(func(dc Multitasking.DistributeController[int, int], tc Multitasking.ThreadController) {
 		for {
 			dc.AddTask(rand.Int())
 		}
-	}, func(ec Multitasking.ExecuteController[int, int], task int) Multitasking.Result[int, int] {
+	}, func(ec Multitasking.ExecuteController[int, int], tc Multitasking.ThreadController, task int) Multitasking.Result[int, int] {
 		if task%2 == 0 {
 			return ec.Success(task * 2)
 		}

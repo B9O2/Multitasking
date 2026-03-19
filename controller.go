@@ -12,13 +12,24 @@ type Controller[TaskType any, ResultType any] interface {
 	Name() string
 	Debug(bool)
 	Context() context.Context
-	Logger() zerolog.Logger
 	InheritDC() DistributeController[TaskType, ResultType]
 	Init(*Multitasking[TaskType, ResultType])
 	Pause()
 	Resume()
-	setInternal(context.Context, *zerolog.Logger)
 }
+
+type ThreadController interface {
+	ThreadID() int64
+	Logger() zerolog.Logger
+}
+
+type baseThreadController struct {
+	tid    int64
+	logger zerolog.Logger
+}
+
+func (btc *baseThreadController) ThreadID() int64 { return btc.tid }
+func (btc *baseThreadController) Logger() zerolog.Logger { return btc.logger }
 
 type DistributeController[TaskType any, ResultType any] interface {
 	Controller[TaskType, ResultType]
@@ -31,7 +42,6 @@ type ExecuteController[TaskType any, ResultType any] interface {
 	Retry(...TaskType) Result[TaskType, ResultType]
 	Success(ResultType) Result[TaskType, ResultType]
 	Null() Result[TaskType, ResultType]
-	ThreadID() int64
 }
 
 type MiddlewareController[TaskType any, ResultType any] interface {
@@ -40,9 +50,7 @@ type MiddlewareController[TaskType any, ResultType any] interface {
 
 // BaseController 基础控制器，其他控制器都应当继承自此控制器
 type BaseController[TaskType any, ResultType any] struct {
-	mt     *Multitasking[TaskType, ResultType]
-	ctx    context.Context
-	logger *zerolog.Logger
+	mt *Multitasking[TaskType, ResultType]
 }
 
 func (bc *BaseController[TaskType, ResultType]) Name() string {
@@ -80,25 +88,7 @@ func (bc *BaseController[TaskType, ResultType]) Init(
 }
 
 func (bc *BaseController[TaskType, ResultType]) Context() context.Context {
-	if bc.ctx != nil {
-		return bc.ctx
-	}
-	if bc.mt != nil {
-		return bc.mt.ctx
-	}
-	return context.Background()
-}
-
-func (bc *BaseController[TaskType, ResultType]) Logger() zerolog.Logger {
-	if bc.logger != nil {
-		return *bc.logger
-	}
-	return zerolog.New(nil)
-}
-
-func (bc *BaseController[TaskType, ResultType]) setInternal(ctx context.Context, logger *zerolog.Logger) {
-	bc.ctx = ctx
-	bc.logger = logger
+	return bc.mt.ctx
 }
 
 func NewBaseController[TaskType any, ResultType any]() *BaseController[TaskType, ResultType] {
@@ -125,7 +115,6 @@ func (bdc *BaseDistributeController[TaskType, ResultType]) AddTasks(
 }
 
 func (bdc *BaseDistributeController[TaskType, ResultType]) Terminate() {
-	//fmt.Println("TERMINATED")
 	bdc.mt.terminating = true
 	panic("multitasking terminated")
 }
@@ -161,25 +150,14 @@ func (bec *BaseExecuteController[TaskType, ResultType]) Success(
 	}
 }
 
-func (bec *BaseExecuteController[TaskType, ResultType]) ThreadID() int64 {
-	tid, ok := bec.Context().Value("thread_id").(uint64)
-	if !ok {
-		return -1
-	}
-	return int64(tid)
-}
-
 func (bec *BaseExecuteController[TaskType, ResultType]) Terminate() {
 	defer func() {
 		if r := recover(); r != nil {
-			//fmt.Println("Terminate:", r)
 		}
 	}()
 
 	bec.mt.terminating = true
 	TryClose(bec.mt.taskQueue)
-	//TryClose(bec.mt.retryQueue.In)
-
 }
 
 func NewBaseExecuteController[TaskType any, ResultType any]() *BaseExecuteController[TaskType, ResultType] {
