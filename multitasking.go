@@ -26,7 +26,7 @@ type Multitasking[TaskType any, ResultType any] struct {
 
 	//callback
 	taskCallback      func(DistributeController[TaskType, ResultType])
-	execCallback      func(ExecuteController[TaskType, ResultType], zerolog.Logger, TaskType) Result[TaskType, ResultType]
+	execCallback      func(ExecuteController[TaskType, ResultType], TaskType) Result[TaskType, ResultType]
 	resultMiddlewares []Middleware[TaskType, ResultType]
 	errCallback       func(Controller[TaskType, ResultType], error)
 	loggerInit        func(uint64, zerolog.Logger) zerolog.Logger
@@ -195,7 +195,7 @@ func (m *Multitasking[TaskType, ResultType]) SetLogger(
 
 func (m *Multitasking[TaskType, ResultType]) Register(
 	taskFunc func(DistributeController[TaskType, ResultType]),
-	execFunc func(ExecuteController[TaskType, ResultType], zerolog.Logger, TaskType) Result[TaskType, ResultType],
+	execFunc func(ExecuteController[TaskType, ResultType], TaskType) Result[TaskType, ResultType],
 ) {
 	m.taskCallback = taskFunc
 	m.execCallback = execFunc
@@ -286,7 +286,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		m.loggers[exid] = logger
 
 		threadCtx := context.WithValue(m.ctx, "thread_id", exid)
-		workerEC := m.ec.WithContext(threadCtx)
+		workerEC := m.ec.WithContext(threadCtx).WithLogger(logger)
 
 		go func() {
 			defer func() {
@@ -306,7 +306,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 				Try(func() {
 
 					if !m.terminating {
-						res = m.execCallback(workerEC, logger, task.data)
+						res = m.execCallback(workerEC, task.data)
 					}
 
 				}, func(msg string) {
@@ -347,6 +347,14 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		defer func() {
 			resultWg.Done()
 		}()
+		collectorLogger := m.loggerInit(uint64(0), zerolog.New(nil)).
+			With().
+			Str("component", "collector").
+			Int("thread_id", -1).
+			Timestamp().
+			Logger()
+		collectorEC := m.ec.WithLogger(collectorLogger).WithContext(context.WithValue(m.ctx, "thread_id", uint64(0)))
+
 		for ret := range resultQueue {
 			if ret == nil {
 				continue
@@ -360,10 +368,10 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 				for _, rm := range m.resultMiddlewares {
 					Try(func() {
 						if currentNr, ok := ret.(NormalResult[TaskType, ResultType]); ok {
-							ret = rm(m.ec, currentNr.Data())
+							ret = rm(collectorEC, currentNr.Data())
 						}
 					}, func(s string) {
-						m.errCallback(m.ec, errors.New(s))
+						m.errCallback(collectorEC, errors.New(s))
 					}, terminateErrorIgnore)
 				}
 			}
@@ -401,8 +409,6 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 	//m.Log(-2, "[*]Retry Closed")
 	TryClose(bufferQueue)
 	//m.Log(-2, "[*]BufferQueue Closed")
-	m.ec.Terminate()
-	//m.Log(-2, "[*]EC Terminated")
 	totalExecWg.Wait()
 	//m.Log(-2, "[*]Total Task Done")
 	sgw.Close()

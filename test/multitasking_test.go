@@ -60,7 +60,6 @@ func GenNumbersTerminate(dc Multitasking.DistributeController[any, any]) {
 
 func AddNumber(
 	ec Multitasking.ExecuteController[any, any],
-	logger zerolog.Logger,
 	i any,
 ) Multitasking.Result[any, any] {
 	task := i.(Task)
@@ -69,7 +68,6 @@ func AddNumber(
 
 func RetryNumber(
 	ec Multitasking.ExecuteController[any, any],
-	logger zerolog.Logger,
 	i any,
 ) Multitasking.Result[any, any] {
 	task := i.(Task)
@@ -91,7 +89,6 @@ func RetryNumber(
 
 func HandleNumber(
 	ec Multitasking.ExecuteController[any, any],
-	logger zerolog.Logger,
 	i any,
 ) Multitasking.Result[any, any] {
 	task := i.(Task)
@@ -109,7 +106,7 @@ func TestMultitasking(t *testing.T) {
 	tests := []struct {
 		name         string
 		distribution func(dc Multitasking.DistributeController[any, any])
-		exec         func(ec Multitasking.ExecuteController[any, any], logger zerolog.Logger, i any) Multitasking.Result[any, any]
+		exec         func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any]
 		middlewares  []Multitasking.Middleware[any, any]
 		threads      uint64
 	}{
@@ -217,6 +214,13 @@ func TestMultitaskingContext(t *testing.T) {
 
 // -----------------------------------------------------------------//
 func TestExternalTerminate(t *testing.T) {
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond) // 给 runtime 协程一点收尾时间
+	
+	buf := make([]byte, 1<<20)
+	n := runtime.Stack(buf, true)
+	fmt.Printf("--- START STACK ---\n%s\n", buf[:n])
+	
 	baseRoutine := runtime.NumGoroutine()
 	mt := Multitasking.NewMultitasking[any, any]("ovo", nil)
 	mt.Register(GenNumbers, HandleNumber)
@@ -247,27 +251,21 @@ func TestExternalTerminate(t *testing.T) {
 		return
 	}
 	fmt.Println(run)
-	// for _, event := range mt.Events(-2) {
-	// 	fmt.Println(event)
-	// }
+	
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
 
-	goroutines := make([]byte, 1<<20)
-	_ = runtime.Stack(goroutines, true)
-
+	n2 := runtime.Stack(buf, true)
+	fmt.Printf("--- FINISH STACK ---\n%s\n", buf[:n2])
+	
 	finishRoutine := runtime.NumGoroutine()
-	fmt.Printf("Total goroutines: %d\n", finishRoutine)
-	//fmt.Println(string(goroutines[:length]))
+	fmt.Printf("Total goroutines: %d (Base: %d)\n", finishRoutine, baseRoutine)
+	
 	if baseRoutine != finishRoutine {
 		panic(fmt.Sprintf("Routine Error:%d->%d", baseRoutine, finishRoutine))
 	} else {
 		fmt.Println("Routines OK")
 	}
-
-	/*
-		for _, event := range mt.Events(1) {
-			fmt.Println(event)
-		}
-	*/
 }
 
 type TerminateEC struct {
@@ -285,6 +283,26 @@ func (tec *TerminateEC) T() {
 
 }
 
+func (tec *TerminateEC) WithContext(
+	ctx context.Context,
+) Multitasking.ExecuteController[any, any] {
+	base := tec.BaseExecuteController.WithContext(ctx)
+	return &TerminateEC{
+		BaseExecuteController: base.(*Multitasking.BaseExecuteController[any, any]),
+		n:                     tec.n,
+	}
+}
+
+func (tec *TerminateEC) WithLogger(
+	logger zerolog.Logger,
+) Multitasking.ExecuteController[any, any] {
+	base := tec.BaseExecuteController.WithLogger(logger)
+	return &TerminateEC{
+		BaseExecuteController: base.(*Multitasking.BaseExecuteController[any, any]),
+		n:                     tec.n,
+	}
+}
+
 func NewTerminateEC() *TerminateEC {
 	return &TerminateEC{
 		Multitasking.NewBaseExecuteController[any, any](),
@@ -300,7 +318,7 @@ func TestControllerTerminate(t *testing.T) {
 	mt.SetController(NewTerminateEC())
 	mt.Register(
 		GenNumbers,
-		func(ec Multitasking.ExecuteController[any, any], logger zerolog.Logger, i any) Multitasking.Result[any, any] {
+		func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
 			task := i.(Task)
 			//fmt.Println(task)
 			if task.I > 2000 {
@@ -337,7 +355,7 @@ func TestPause(t *testing.T) {
 			final += 1
 
 		}
-	}, func(ec Multitasking.ExecuteController[any, any], logger zerolog.Logger, i any) Multitasking.Result[any, any] {
+	}, func(ec Multitasking.ExecuteController[any, any], i any) Multitasking.Result[any, any] {
 		task := i.(Task)
 		//mt.Log(1, "测试日志"+time.Now().String())
 		if task.I == 2000 {

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/B9O2/Multitasking"
-	"github.com/rs/zerolog"
 )
 
 func TestMaaS(t *testing.T) {
@@ -14,7 +13,7 @@ func TestMaaS(t *testing.T) {
 		for {
 			dc.AddTask(rand.Int())
 		}
-	}, func(ec Multitasking.ExecuteController[int, int], l zerolog.Logger, task int) Multitasking.Result[int, int] {
+	}, func(ec Multitasking.ExecuteController[int, int], task int) Multitasking.Result[int, int] {
 		if task%2 == 0 {
 			return ec.Success(task * 2)
 		}

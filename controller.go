@@ -2,6 +2,8 @@ package Multitasking
 
 import (
 	"context"
+
+	"github.com/rs/zerolog"
 )
 
 type Controller[TaskType any, ResultType any] interface {
@@ -10,6 +12,7 @@ type Controller[TaskType any, ResultType any] interface {
 	Name() string
 	Debug(bool)
 	Context() context.Context
+	Logger() zerolog.Logger
 	InheritDC() DistributeController[TaskType, ResultType]
 	Init(*Multitasking[TaskType, ResultType])
 	Pause()
@@ -28,6 +31,7 @@ type ExecuteController[TaskType any, ResultType any] interface {
 	Success(ResultType) Result[TaskType, ResultType]
 	Null() Result[TaskType, ResultType]
 	WithContext(context.Context) ExecuteController[TaskType, ResultType]
+	WithLogger(zerolog.Logger) ExecuteController[TaskType, ResultType]
 	ThreadID() int64
 }
 
@@ -37,8 +41,9 @@ type MiddlewareController[TaskType any, ResultType any] interface {
 
 // BaseController 基础控制器，其他控制器都应当继承自此控制器
 type BaseController[TaskType any, ResultType any] struct {
-	mt  *Multitasking[TaskType, ResultType]
-	ctx context.Context
+	mt     *Multitasking[TaskType, ResultType]
+	ctx    context.Context
+	logger *zerolog.Logger
 }
 
 func (bc *BaseController[TaskType, ResultType]) Name() string {
@@ -79,7 +84,17 @@ func (bc *BaseController[TaskType, ResultType]) Context() context.Context {
 	if bc.ctx != nil {
 		return bc.ctx
 	}
-	return bc.mt.ctx
+	if bc.mt != nil {
+		return bc.mt.ctx
+	}
+	return context.Background()
+}
+
+func (bc *BaseController[TaskType, ResultType]) Logger() zerolog.Logger {
+	if bc.logger != nil {
+		return *bc.logger
+	}
+	return zerolog.New(nil)
 }
 
 func NewBaseController[TaskType any, ResultType any]() *BaseController[TaskType, ResultType] {
@@ -155,8 +170,21 @@ func (bec *BaseExecuteController[TaskType, ResultType]) WithContext(
 ) ExecuteController[TaskType, ResultType] {
 	return &BaseExecuteController[TaskType, ResultType]{
 		BaseController: &BaseController[TaskType, ResultType]{
-			mt:  bec.mt,
-			ctx: ctx,
+			mt:     bec.mt,
+			ctx:    ctx,
+			logger: bec.logger,
+		},
+	}
+}
+
+func (bec *BaseExecuteController[TaskType, ResultType]) WithLogger(
+	logger zerolog.Logger,
+) ExecuteController[TaskType, ResultType] {
+	return &BaseExecuteController[TaskType, ResultType]{
+		BaseController: &BaseController[TaskType, ResultType]{
+			mt:     bec.mt,
+			ctx:    bec.ctx,
+			logger: &logger,
 		},
 	}
 }

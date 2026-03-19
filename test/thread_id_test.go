@@ -20,7 +20,7 @@ func TestThreadID(t *testing.T) {
 		for i := 0; i < 100; i++ {
 			dc.AddTask(i)
 		}
-	}, func(ec Multitasking.ExecuteController[int, int], logger zerolog.Logger, data int) Multitasking.Result[int, int] {
+	}, func(ec Multitasking.ExecuteController[int, int], data int) Multitasking.Result[int, int] {
 		tid := ec.ThreadID()
 
 		if tid < 0 || tid >= int64(numThreads) {
@@ -30,6 +30,9 @@ func TestThreadID(t *testing.T) {
 		mu.Lock()
 		threadIDs[tid] = true
 		mu.Unlock()
+
+		l := ec.Logger()
+		l.Debug().Int("data", data).Msg("processing")
 
 		return ec.Success(data)
 	})
@@ -57,7 +60,7 @@ func TestNoThreadID(t *testing.T) {
 
 	mt.Register(func(dc Multitasking.DistributeController[int, int]) {
 		dc.AddTask(1)
-	}, func(ec Multitasking.ExecuteController[int, int], logger zerolog.Logger, data int) Multitasking.Result[int, int] {
+	}, func(ec Multitasking.ExecuteController[int, int], data int) Multitasking.Result[int, int] {
 		capturedEC = ec
 		return ec.Success(data)
 	})
@@ -92,6 +95,16 @@ func (c *CustomEC[T, R]) WithContext(
 	}
 }
 
+func (c *CustomEC[T, R]) WithLogger(
+	logger zerolog.Logger,
+) Multitasking.ExecuteController[T, R] {
+	base := c.BaseExecuteController.WithLogger(logger)
+	return &CustomEC[T, R]{
+		BaseExecuteController: base.(*Multitasking.BaseExecuteController[T, R]),
+		CustomTag:             c.CustomTag,
+	}
+}
+
 func TestCustomController(t *testing.T) {
 	numThreads := uint64(5)
 	mt := Multitasking.NewMultitasking[int, int]("TestCustomController", nil)
@@ -110,7 +123,7 @@ func TestCustomController(t *testing.T) {
 		for i := 0; i < 50; i++ {
 			dc.AddTask(i)
 		}
-	}, func(ec Multitasking.ExecuteController[int, int], logger zerolog.Logger, data int) Multitasking.Result[int, int] {
+	}, func(ec Multitasking.ExecuteController[int, int], data int) Multitasking.Result[int, int] {
 		custom, ok := ec.(*CustomEC[int, int])
 
 		tid := ec.ThreadID()
@@ -127,6 +140,9 @@ func TestCustomController(t *testing.T) {
 		} else {
 			recordedIDs[tid] = true
 		}
+
+		l := ec.Logger()
+		l.Info().Msg("custom log")
 
 		return ec.Success(data)
 	})
