@@ -75,3 +75,81 @@ func TestNoThreadID(t *testing.T) {
 		t.Errorf("Expected -1 for missing ThreadID context, got %d", tid)
 	}
 }
+
+// CustomEC 定义一个用户自定义的执行控制器
+type CustomEC[T any, R any] struct {
+	*Multitasking.BaseExecuteController[T, R]
+	CustomTag string
+}
+
+func (c *CustomEC[T, R]) WithContext(
+	ctx context.Context,
+) Multitasking.ExecuteController[T, R] {
+	base := c.BaseExecuteController.WithContext(ctx)
+	return &CustomEC[T, R]{
+		BaseExecuteController: base.(*Multitasking.BaseExecuteController[T, R]),
+		CustomTag:             c.CustomTag,
+	}
+}
+
+func TestCustomController(t *testing.T) {
+	numThreads := uint64(5)
+	mt := Multitasking.NewMultitasking[int, int]("TestCustomController", nil)
+
+	myEC := &CustomEC[int, int]{
+		BaseExecuteController: Multitasking.NewBaseExecuteController[int, int](),
+		CustomTag:             "SpecialWorker",
+	}
+	mt.SetController(myEC)
+
+	var mu sync.Mutex
+	tagCorrect := true
+	recordedIDs := make(map[int64]bool)
+
+	mt.Register(func(dc Multitasking.DistributeController[int, int]) {
+		for i := 0; i < 50; i++ {
+			dc.AddTask(i)
+		}
+	}, func(ec Multitasking.ExecuteController[int, int], logger zerolog.Logger, data int) Multitasking.Result[int, int] {
+		custom, ok := ec.(*CustomEC[int, int])
+
+		tid := ec.ThreadID()
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		if !ok || custom.CustomTag != "SpecialWorker" {
+			tagCorrect = false
+		}
+
+		if tid < 0 || tid >= int64(numThreads) {
+			t.Errorf("Unexpected ThreadID in custom controller: %d", tid)
+		} else {
+			recordedIDs[tid] = true
+		}
+
+		return ec.Success(data)
+	})
+
+	_, err := mt.Run(context.Background(), numThreads)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if !tagCorrect {
+		t.Error("Custom controller tag was lost or type assertion failed")
+	}
+
+	if len(recordedIDs) == 0 {
+		t.Error("No ThreadIDs were recorded in custom controller")
+	}
+
+	t.Logf("Custom Controller unique ThreadIDs: %d", len(recordedIDs))
+	if len(recordedIDs) != int(numThreads) {
+		t.Errorf(
+			"Expected %d unique ThreadIDs, but got %d. Some threads might not have been utilized or IDs were wrong.",
+			numThreads,
+			len(recordedIDs),
+		)
+	}
+}
