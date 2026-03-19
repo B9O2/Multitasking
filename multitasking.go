@@ -60,7 +60,14 @@ func (m *Multitasking[TaskType, ResultType]) forkController(
 	ctx context.Context,
 	logger *zerolog.Logger,
 ) Controller[TaskType, ResultType] {
+	if ctrl == nil {
+		return nil
+	}
+
 	origPtr := reflect.ValueOf(ctrl)
+	if origPtr.Kind() != reflect.Ptr || origPtr.IsNil() {
+		return ctrl
+	}
 	origElem := origPtr.Elem()
 
 	copyPtr := reflect.New(origElem.Type())
@@ -70,13 +77,11 @@ func (m *Multitasking[TaskType, ResultType]) forkController(
 
 	m.relinkBaseController(copyElem, ctx, logger)
 
-	// 转换回接口
 	newCtrl := copyPtr.Interface().(Controller[TaskType, ResultType])
 
 	return newCtrl
 }
 
-// relinkBaseController 递归查找并替换嵌入的 BaseController 指针
 func (m *Multitasking[TaskType, ResultType]) relinkBaseController(
 	v reflect.Value,
 	ctx context.Context,
@@ -86,18 +91,18 @@ func (m *Multitasking[TaskType, ResultType]) relinkBaseController(
 		f := v.Field(i)
 
 		if f.Type() == reflect.TypeFor[*BaseController[TaskType, ResultType]]() {
-			// 创建一个新的 BaseController 实例，确保状态独立
 			newBase := &BaseController[TaskType, ResultType]{
 				mt:     m,
 				ctx:    ctx,
 				logger: logger,
 			}
 			f.Set(reflect.ValueOf(newBase))
-			return
+			continue
 		}
 
 		if f.Kind() == reflect.Struct && v.Type().Field(i).Anonymous {
 			m.relinkBaseController(f, ctx, logger)
+			continue
 		}
 
 		if f.Kind() == reflect.Pointer && !f.IsNil() &&
@@ -105,8 +110,9 @@ func (m *Multitasking[TaskType, ResultType]) relinkBaseController(
 			pkgPtr := reflect.New(f.Elem().Type())
 			pkgElem := pkgPtr.Elem()
 			pkgElem.Set(f.Elem())
-			f.Set(pkgPtr)
+			f.Set(pkgPtr) // 替换指针
 			m.relinkBaseController(pkgElem, ctx, logger)
+			continue
 		}
 	}
 }
