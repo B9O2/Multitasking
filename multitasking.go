@@ -284,6 +284,10 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		totalExecWg.Add(1)
 		logger := m.loggerInit(tid, zerolog.New(nil))
 		m.loggers[exid] = logger
+
+		threadCtx := context.WithValue(m.ctx, "thread_id", exid)
+		workerEC := m.ec.WithContext(threadCtx)
+
 		go func() {
 			defer func() {
 				totalExecWg.Done()
@@ -294,19 +298,19 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 				m.threadsDetail.Add(exid, 1)
 				//m.Log(-1, fmt.Sprintf("[>]DC: task.data: %v", task))
 				select {
-				case <-m.ec.Context().Done():
-					m.ec.Terminate()
+				case <-workerEC.Context().Done():
+					workerEC.Terminate()
 				default:
 				}
 				var res Result[TaskType, ResultType]
 				Try(func() {
 
 					if !m.terminating {
-						res = m.execCallback(m.ec, logger, task.data)
+						res = m.execCallback(workerEC, logger, task.data)
 					}
 
 				}, func(msg string) {
-					m.errCallback(m.ec, errors.New(msg))
+					m.errCallback(workerEC, errors.New(msg))
 				}, terminateErrorIgnore)
 
 				//根据返回类型的不同处理

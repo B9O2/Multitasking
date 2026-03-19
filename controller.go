@@ -27,6 +27,8 @@ type ExecuteController[TaskType any, ResultType any] interface {
 	Retry(...TaskType) Result[TaskType, ResultType]
 	Success(ResultType) Result[TaskType, ResultType]
 	Null() Result[TaskType, ResultType]
+	WithContext(context.Context) ExecuteController[TaskType, ResultType]
+	ThreadID() int64
 }
 
 type MiddlewareController[TaskType any, ResultType any] interface {
@@ -35,7 +37,8 @@ type MiddlewareController[TaskType any, ResultType any] interface {
 
 // BaseController 基础控制器，其他控制器都应当继承自此控制器
 type BaseController[TaskType any, ResultType any] struct {
-	mt *Multitasking[TaskType, ResultType]
+	mt  *Multitasking[TaskType, ResultType]
+	ctx context.Context
 }
 
 func (bc *BaseController[TaskType, ResultType]) Name() string {
@@ -66,11 +69,16 @@ func (bc *BaseController[TaskType, ResultType]) InheritDC() DistributeController
 	}
 }
 
-func (bc *BaseController[TaskType, ResultType]) Init(mt *Multitasking[TaskType, ResultType]) {
+func (bc *BaseController[TaskType, ResultType]) Init(
+	mt *Multitasking[TaskType, ResultType],
+) {
 	bc.mt = mt
 }
 
 func (bc *BaseController[TaskType, ResultType]) Context() context.Context {
+	if bc.ctx != nil {
+		return bc.ctx
+	}
 	return bc.mt.ctx
 }
 
@@ -83,11 +91,15 @@ type BaseDistributeController[TaskType any, ResultType any] struct {
 	*BaseController[TaskType, ResultType]
 }
 
-func (bdc *BaseDistributeController[TaskType, ResultType]) AddTask(task TaskType) {
+func (bdc *BaseDistributeController[TaskType, ResultType]) AddTask(
+	task TaskType,
+) {
 	bdc.mt.addTask(task)
 }
 
-func (bdc *BaseDistributeController[TaskType, ResultType]) AddTasks(tasks ...TaskType) {
+func (bdc *BaseDistributeController[TaskType, ResultType]) AddTasks(
+	tasks ...TaskType,
+) {
 	for _, task := range tasks {
 		bdc.AddTask(task)
 	}
@@ -127,6 +139,25 @@ func (bec *BaseExecuteController[TaskType, ResultType]) Success(
 ) Result[TaskType, ResultType] {
 	return NormalResult[TaskType, ResultType]{
 		data: data,
+	}
+}
+
+func (bec *BaseExecuteController[TaskType, ResultType]) ThreadID() int64 {
+	tid, ok := bec.Context().Value("thread_id").(uint64)
+	if !ok {
+		return -1
+	}
+	return int64(tid)
+}
+
+func (bec *BaseExecuteController[TaskType, ResultType]) WithContext(
+	ctx context.Context,
+) ExecuteController[TaskType, ResultType] {
+	return &BaseExecuteController[TaskType, ResultType]{
+		BaseController: &BaseController[TaskType, ResultType]{
+			mt:  bec.mt,
+			ctx: ctx,
+		},
 	}
 }
 
