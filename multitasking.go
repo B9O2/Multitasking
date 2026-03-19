@@ -54,7 +54,10 @@ type Multitasking[TaskType any, ResultType any] struct {
 	shield *Shield.Shield
 }
 
-func (m *Multitasking[TaskType, ResultType]) init(ctx context.Context, threads uint64) {
+func (m *Multitasking[TaskType, ResultType]) init(
+	ctx context.Context,
+	threads uint64,
+) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -160,7 +163,9 @@ func (m *Multitasking[TaskType, ResultType]) SetErrorCallback(
 	m.errCallback = callback
 }
 
-func (m *Multitasking[TaskType, ResultType]) SetController(ctrl Controller[TaskType, ResultType]) {
+func (m *Multitasking[TaskType, ResultType]) SetController(
+	ctrl Controller[TaskType, ResultType],
+) {
 	ctrl.Init(m)
 	switch c := ctrl.(type) {
 	case DistributeController[TaskType, ResultType]:
@@ -342,43 +347,42 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 			if ret == nil {
 				continue
 			}
-			switch rt := ret.(type) {
-			case RetryResult[TaskType, ResultType]:
-				for _, rTask := range rt.Tasks() {
-					m.retry(rTask)
-				}
 
-			case NullResult[TaskType, ResultType]:
-				continue
-
-			case NormalResult[TaskType, ResultType]:
+			if _, ok := ret.(NormalResult[TaskType, ResultType]); ok {
 				if m.terminating {
 					totalTaskWg.Done()
 					continue
 				}
-
-				var currentRes Result[TaskType, ResultType] = rt
 				for _, rm := range m.resultMiddlewares {
 					Try(func() {
-						if nr, ok := currentRes.(NormalResult[TaskType, ResultType]); ok {
-							currentRes = rm(m.ec, nr.Data())
+						if currentNr, ok := ret.(NormalResult[TaskType, ResultType]); ok {
+							ret = rm(m.ec, currentNr.Data())
 						}
 					}, func(s string) {
 						m.errCallback(m.ec, errors.New(s))
 					}, terminateErrorIgnore)
 				}
+			}
 
-				if nr, ok := currentRes.(NormalResult[TaskType, ResultType]); ok {
-					m.totalResult += 1
-					results = append(results, nr.Data())
-					totalTaskWg.Done()
-				} else if rr, ok := currentRes.(RetryResult[TaskType, ResultType]); ok {
-					for _, rTask := range rr.Tasks() {
-						m.retry(rTask)
-					}
-				} else {
+			switch rt := ret.(type) {
+			case NormalResult[TaskType, ResultType]:
+				m.totalResult += 1
+				results = append(results, rt.Data())
+				totalTaskWg.Done()
+
+			case RetryResult[TaskType, ResultType]:
+				tasks := rt.Tasks()
+				if len(tasks) > 1 {
+					totalTaskWg.Add(len(tasks) - 1)
+				} else if len(tasks) == 0 {
 					totalTaskWg.Done()
 				}
+				for _, rTask := range tasks {
+					m.retry(rTask)
+				}
+
+			default:
+				totalTaskWg.Done()
 			}
 		}
 		//m.Log(-2, "[-] result collector closed")
