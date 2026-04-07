@@ -48,6 +48,9 @@ type Multitasking[TaskType any, ResultType any] struct {
 	threadsDetail                                     *status.ThreadsDetail
 	loggers                                           []zerolog.Logger
 
+	//config
+	terminateErrorIgnore []string
+
 	//events []Event
 
 	//extra
@@ -217,30 +220,9 @@ func (m *Multitasking[TaskType, ResultType]) resume() {
 	close(m.pauseChan)
 }
 
-func (m *Multitasking[TaskType, ResultType]) Run(
-	ctx context.Context,
-	threads uint64,
-) (results []ResultType, err error) {
-	if threads <= 0 {
-		return nil, errors.New("threads should be grant than 0")
-	}
-
-	m.init(ctx, threads)
-
-	//control
-	sgw := NewWaiter() //Scheduling Gate Waiter
-	bufferQueue := make(chan Task[TaskType])
-	resultQueue := make(chan Result[TaskType, ResultType])
-	totalTaskWg := &sync.WaitGroup{}
-	totalExecWg := &sync.WaitGroup{}
-	resultWg := &sync.WaitGroup{}
-
-	terminateErrorIgnore := []string{
-		"multitasking terminated",
-		"send on closed channel",
-	}
-
-	//Distribution
+func (m *Multitasking[TaskType, ResultType]) startDistribution(
+	sgw *Waiter,
+) {
 	go Try(func() {
 		defer func() {
 			TryClose(m.taskQueue)
@@ -255,9 +237,14 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		m.taskCallback(m.dc)
 	}, func(msg string) {
 		m.errCallback(m.dc, errors.New(msg))
-	}, terminateErrorIgnore)
+	}, m.terminateErrorIgnore)
+}
 
-	//SchedulingGate
+func (m *Multitasking[TaskType, ResultType]) startSchedulingGate(
+	sgw *Waiter,
+	totalTaskWg *sync.WaitGroup,
+	bufferQueue chan Task[TaskType],
+) {
 	go Try(func() {
 		goon := true
 		for goon {
@@ -281,9 +268,15 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		}
 	}, func(msg string) {
 		m.errCallback(m.dc, errors.New(msg))
-	}, terminateErrorIgnore)
+	}, m.terminateErrorIgnore)
+}
 
-	//Execution
+func (m *Multitasking[TaskType, ResultType]) startExecution(
+	threads uint64,
+	bufferQueue chan Task[TaskType],
+	resultQueue chan Result[TaskType, ResultType],
+	totalExecWg *sync.WaitGroup,
+) {
 	for tid := uint64(0); tid < threads; {
 		exid := tid
 		totalExecWg.Add(1)
@@ -323,7 +316,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 
 				}, func(msg string) {
 					m.errCallback(m.ec, errors.New(msg))
-				}, terminateErrorIgnore)
+				}, m.terminateErrorIgnore)
 
 				//根据返回类型的不同处理
 				if res == nil {
@@ -352,8 +345,14 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		//m.Log(-1, fmt.Sprintf("[+] task execute started (%d)", exid))
 		tid += 1
 	}
+}
 
-	//Result
+func (m *Multitasking[TaskType, ResultType]) startResultCollector(
+	resultWg *sync.WaitGroup,
+	resultQueue chan Result[TaskType, ResultType],
+	totalTaskWg *sync.WaitGroup,
+	results []ResultType,
+) {
 	resultWg.Add(1)
 	go Try(func() {
 		defer func() {
@@ -377,7 +376,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 						}
 					}, func(s string) {
 						m.errCallback(m.ec, errors.New(s))
-					}, terminateErrorIgnore)
+					}, m.terminateErrorIgnore)
 				}
 			}
 
@@ -405,7 +404,43 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		//m.Log(-2, "[-] result collector closed")
 	}, func(msg string) {
 		m.errCallback(m.ec, errors.New(msg))
-	}, terminateErrorIgnore)
+	}, m.terminateErrorIgnore)
+}
+
+func (m *Multitasking[TaskType, ResultType]) Run(
+	ctx context.Context,
+	threads uint64,
+) (results []ResultType, err error) {
+	if threads <= 0 {
+		return nil, errors.New("threads should be grant than 0")
+	}
+
+	m.init(ctx, threads)
+
+	//control
+	sgw := NewWaiter() //Scheduling Gate Waiter
+	bufferQueue := make(chan Task[TaskType])
+	resultQueue := make(chan Result[TaskType, ResultType])
+	totalTaskWg := &sync.WaitGroup{}
+	totalExecWg := &sync.WaitGroup{}
+	resultWg := &sync.WaitGroup{}
+
+	//Distribution
+	m.startDistribution(sgw)
+
+	//SchedulingGate
+	m.startSchedulingGate(sgw, totalTaskWg, bufferQueue)
+
+	//Execution
+	m.startExecution(threads, bufferQueue, resultQueue, totalExecWg)
+
+	//Result
+	m.startResultCollector(
+		resultWg,
+		resultQueue,
+		totalTaskWg,
+		results,
+	)
 
 	sgw.WaitAll(1)
 	totalTaskWg.Wait()
@@ -438,6 +473,10 @@ func newMultitasking[TaskType any, ResultType any](
 		debug:     debug,
 		inherit:   inherit,
 		pauseChan: nil,
+		terminateErrorIgnore: []string{
+			"multitasking terminated",
+			"send on closed channel",
+		},
 	}
 
 	dc := NewBaseDistributeController[TaskType, ResultType]()
