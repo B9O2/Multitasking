@@ -351,7 +351,7 @@ func (m *Multitasking[TaskType, ResultType]) startResultCollector(
 	resultWg *sync.WaitGroup,
 	resultQueue chan Result[TaskType, ResultType],
 	totalTaskWg *sync.WaitGroup,
-	results []ResultType,
+	results *[]ResultType,
 ) {
 	resultWg.Add(1)
 	go Try(func() {
@@ -383,7 +383,7 @@ func (m *Multitasking[TaskType, ResultType]) startResultCollector(
 			switch rt := ret.(type) {
 			case NormalResult[TaskType, ResultType]:
 				m.totalResult += 1
-				results = append(results, rt.Data())
+				*results = append(*results, rt.Data())
 				totalTaskWg.Done()
 
 			case RetryResult[TaskType, ResultType]:
@@ -439,7 +439,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 		resultWg,
 		resultQueue,
 		totalTaskWg,
-		results,
+		&results,
 	)
 
 	sgw.WaitAll(1)
