@@ -15,10 +15,20 @@ type internalHeap[T any] struct {
 	less  func(a, b T) bool
 }
 
-func (h *internalHeap[T]) Len() int           { return len(h.items) }
-func (h *internalHeap[T]) Swap(i, j int)      { h.items[i], h.items[j] = h.items[j], h.items[i] }
-func (h *internalHeap[T]) Push(x interface{}) { h.items = append(h.items, x.(*priorityItem[T])) }
-func (h *internalHeap[T]) Pop() interface{} {
+func (h *internalHeap[T]) Len() int { return len(h.items) }
+
+func (h *internalHeap[T]) Swap(
+	i, j int,
+) {
+	h.items[i], h.items[j] = h.items[j], h.items[i]
+}
+
+func (h *internalHeap[T]) Push(
+	x any,
+) {
+	h.items = append(h.items, x.(*priorityItem[T]))
+}
+func (h *internalHeap[T]) Pop() any {
 	old := h.items
 	n := len(old)
 	item := old[n-1]
@@ -84,11 +94,15 @@ func (pq *PriorityQueue[T]) run() {
 		pq.mu.Lock()
 		if pq.h.Len() == 0 {
 			pq.mu.Unlock()
-			if inChan == nil { return }
-			
+			if inChan == nil {
+				return
+			}
+
 			// 堆空且输入没关，阻塞等待
 			val, ok := <-inChan
-			if !ok { return }
+			if !ok {
+				return
+			}
 			pq.pushInternal(val)
 			continue
 		}
