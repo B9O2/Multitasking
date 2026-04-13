@@ -10,7 +10,6 @@ import (
 	"github.com/B9O2/Multitasking/status"
 	"github.com/B9O2/NStruct/Shield"
 	"github.com/rs/zerolog"
-	"github.com/smallnest/chanx"
 )
 
 type Task[TaskType any] struct {
@@ -35,7 +34,7 @@ type Multitasking[TaskType any, ResultType any] struct {
 	terminating bool
 	pauseChan   chan struct{}
 	taskQueue   chan TaskType
-	retryQueue  *chanx.UnboundedChan[TaskType]
+	retryQueue  *PriorityQueue[TaskType]
 	ctx         context.Context
 	cancel      context.CancelFunc
 
@@ -47,6 +46,9 @@ type Multitasking[TaskType any, ResultType any] struct {
 	maxRetryQueue, totalRetry, totalResult, totalTask uint64
 	threadsDetail                                     *status.ThreadsDetail
 	loggers                                           []zerolog.Logger
+
+	//priority
+	priorityComparator func(a, b TaskType) bool
 
 	//config
 	terminateErrorIgnore []string
@@ -69,7 +71,7 @@ func (m *Multitasking[TaskType, ResultType]) init(
 	m.terminating = false
 
 	m.taskQueue = make(chan TaskType)
-	m.retryQueue = chanx.NewUnboundedChan[TaskType](context.Background(), 1)
+	m.retryQueue = NewPriorityQueue(m.priorityComparator)
 	m.pauseChan = make(chan struct{})
 	close(m.pauseChan)
 
@@ -145,6 +147,12 @@ func (m *Multitasking[TaskType, ResultType]) TotalRetry() uint64 {
 
 func (m *Multitasking[TaskType, ResultType]) TotalResult() uint64 {
 	return m.totalResult
+}
+
+func (m *Multitasking[TaskType, ResultType]) SetPriorityComparator(
+	f func(a, b TaskType) bool,
+) {
+	m.priorityComparator = f
 }
 
 func (m *Multitasking[TaskType, ResultType]) MaxRetryQueue() uint64 {
