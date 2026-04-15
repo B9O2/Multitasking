@@ -55,8 +55,11 @@ func (w *Waiter) Wait(conditions ...string) {
 	w.processWg.Done()
 }
 
-func (w *Waiter) WaitAll(n uint) {
-	w.processWg.Add(int(n))
+func (w *Waiter) Add(n int) {
+	w.processWg.Add(n)
+}
+
+func (w *Waiter) WaitAll() {
 	w.processWg.Wait()
 }
 

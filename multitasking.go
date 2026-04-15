@@ -433,6 +433,15 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 	totalExecWg := &sync.WaitGroup{}
 	resultWg := &sync.WaitGroup{}
 
+	//Result
+	m.startResultCollector(
+		resultWg,
+		resultQueue,
+		totalTaskWg,
+		&results,
+	)
+
+	sgw.Add(1)
 	//Distribution
 	m.startDistribution(sgw)
 
@@ -442,15 +451,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 	//Execution
 	m.startExecution(threads, bufferQueue, resultQueue, totalExecWg)
 
-	//Result
-	m.startResultCollector(
-		resultWg,
-		resultQueue,
-		totalTaskWg,
-		&results,
-	)
-
-	sgw.WaitAll(1)
+	sgw.WaitAll()
 	totalTaskWg.Wait()
 	//m.Log(-2, "[*]All Tasks Done")
 	TryClose(m.retryQueue.In)
