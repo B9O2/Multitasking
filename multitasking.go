@@ -86,11 +86,17 @@ func (m *Multitasking[TaskType, ResultType]) init(
 
 func (m *Multitasking[TaskType, ResultType]) addTask(taskInfo TaskType) {
 	if m.terminating {
-		return
+		if m.onTerminating != nil {
+			m.onTerminating(taskInfo)
+		}
+		panic("multitasking terminated")
 	}
 	select {
 	case <-m.ctx.Done():
-		return
+		if m.onTerminating != nil {
+			m.onTerminating(taskInfo)
+		}
+		panic("multitasking terminated")
 	case m.taskQueue <- taskInfo:
 		m.totalTask += 1
 	}
