@@ -28,7 +28,7 @@ type Multitasking[TaskType any, ResultType any] struct {
 	resultMiddlewares []Middleware[TaskType, ResultType]
 	errCallback       func(Controller[TaskType, ResultType], error)
 	loggerInit        func(zerolog.Logger) zerolog.Logger
-	onTerminating     func(TaskType)
+	onTerminating     func(Controller[TaskType, ResultType], TaskType)
 
 	//control
 	terminating bool
@@ -87,14 +87,14 @@ func (m *Multitasking[TaskType, ResultType]) init(
 func (m *Multitasking[TaskType, ResultType]) addTask(taskInfo TaskType) {
 	if m.terminating {
 		if m.onTerminating != nil {
-			m.onTerminating(taskInfo)
+			m.onTerminating(m.dc, taskInfo)
 		}
 		panic("multitasking terminated")
 	}
 	select {
 	case <-m.ctx.Done():
 		if m.onTerminating != nil {
-			m.onTerminating(taskInfo)
+			m.onTerminating(m.dc, taskInfo)
 		}
 		panic("multitasking terminated")
 	case m.taskQueue <- taskInfo:
@@ -184,7 +184,7 @@ func (m *Multitasking[TaskType, ResultType]) Terminate() {
 }
 
 func (m *Multitasking[TaskType, ResultType]) SetOnTerminating(
-	callback func(TaskType),
+	callback func(Controller[TaskType, ResultType], TaskType),
 ) {
 	m.onTerminating = callback
 }
@@ -396,7 +396,7 @@ func (m *Multitasking[TaskType, ResultType]) startResultCollector(
 			if _, ok := ret.(NormalResult[TaskType, ResultType]); ok {
 				if m.terminating {
 					if m.onTerminating != nil {
-						m.onTerminating(ret.RawTask().data)
+						m.onTerminating(m.ec, ret.RawTask().data)
 					}
 					totalTaskWg.Done()
 					continue
@@ -428,7 +428,7 @@ func (m *Multitasking[TaskType, ResultType]) startResultCollector(
 				for _, rTask := range tasks {
 					if m.terminating {
 						if m.onTerminating != nil {
-							m.onTerminating(rTask)
+							m.onTerminating(m.ec, rTask)
 						}
 						totalTaskWg.Done()
 						continue
@@ -535,6 +535,6 @@ func NewMultitasking[TaskType any, ResultType any](
 	name string,
 	inherit *Multitasking[TaskType, ResultType],
 ) *Multitasking[TaskType, ResultType] {
-	lrm := newMultitasking[TaskType, ResultType](name, inherit, false)
+	lrm := newMultitasking(name, inherit, false)
 	return lrm
 }
