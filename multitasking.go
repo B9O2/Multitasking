@@ -3,7 +3,6 @@ package Multitasking
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"sync"
 
@@ -29,6 +28,7 @@ type Multitasking[TaskType any, ResultType any] struct {
 	resultMiddlewares []Middleware[TaskType, ResultType]
 	errCallback       func(Controller[TaskType, ResultType], error)
 	loggerInit        func(zerolog.Logger) zerolog.Logger
+	onTerminating     func(TaskType)
 
 	//control
 	terminating bool
@@ -85,19 +85,27 @@ func (m *Multitasking[TaskType, ResultType]) init(
 }
 
 func (m *Multitasking[TaskType, ResultType]) addTask(taskInfo TaskType) {
-	m.taskQueue <- taskInfo
-	m.totalTask += 1
-	//m.Log(-2, "Join task successfully")
+	if m.terminating {
+		return
+	}
+	select {
+	case <-m.ctx.Done():
+		return
+	case m.taskQueue <- taskInfo:
+		m.totalTask += 1
+	}
 }
 
 func (m *Multitasking[TaskType, ResultType]) retry(taskInfo TaskType) {
-	m.retryQueue.In <- taskInfo
-	m.totalRetry += 1
-	bl := m.retryQueue.BufLen()
-	if bl > int(m.maxRetryQueue) {
-		m.maxRetryQueue = uint64(bl)
+	select {
+	case <-m.ctx.Done():
+	case m.retryQueue.In <- taskInfo:
+		m.totalRetry += 1
+		bl := m.retryQueue.BufLen()
+		if bl > int(m.maxRetryQueue) {
+			m.maxRetryQueue = uint64(bl)
+		}
 	}
-	//m.Log(-2, "retry task successfully")
 }
 
 func (m *Multitasking[TaskType, ResultType]) SetResultMiddlewares(
@@ -165,7 +173,14 @@ func (m *Multitasking[TaskType, ResultType]) ThreadsDetail() *status.ThreadsDeta
 
 func (m *Multitasking[TaskType, ResultType]) Terminate() {
 	m.terminating = true
+	m.resume()
 	m.cancel()
+}
+
+func (m *Multitasking[TaskType, ResultType]) SetOnTerminating(
+	callback func(TaskType),
+) {
+	m.onTerminating = callback
 }
 
 func (m *Multitasking[TaskType, ResultType]) SetErrorCallback(
@@ -223,7 +238,7 @@ func (m *Multitasking[TaskType, ResultType]) pause() {
 
 func (m *Multitasking[TaskType, ResultType]) resume() {
 	defer func() {
-		fmt.Println(recover())
+		_ = recover()
 	}()
 	close(m.pauseChan)
 }
@@ -374,6 +389,9 @@ func (m *Multitasking[TaskType, ResultType]) startResultCollector(
 
 			if _, ok := ret.(NormalResult[TaskType, ResultType]); ok {
 				if m.terminating {
+					if m.onTerminating != nil {
+						m.onTerminating(ret.RawTask().data)
+					}
 					totalTaskWg.Done()
 					continue
 				}
@@ -402,6 +420,13 @@ func (m *Multitasking[TaskType, ResultType]) startResultCollector(
 					totalTaskWg.Done()
 				}
 				for _, rTask := range tasks {
+					if m.terminating {
+						if m.onTerminating != nil {
+							m.onTerminating(rTask)
+						}
+						totalTaskWg.Done()
+						continue
+					}
 					m.retry(rTask)
 				}
 
@@ -433,6 +458,15 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 	totalExecWg := &sync.WaitGroup{}
 	resultWg := &sync.WaitGroup{}
 
+	defer func() {
+		m.ec.Terminate()
+		totalExecWg.Wait()
+		sgw.Close()
+		m.shield.Close()
+		close(resultQueue)
+		resultWg.Wait()
+	}()
+
 	//Result
 	m.startResultCollector(
 		resultWg,
@@ -458,16 +492,6 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 	//m.Log(-2, "[*]Retry Closed")
 	TryClose(bufferQueue)
 	//m.Log(-2, "[*]BufferQueue Closed")
-	m.ec.Terminate()
-	//m.Log(-2, "[*]EC Terminated")
-	totalExecWg.Wait()
-	//m.Log(-2, "[*]Total Task Done")
-	sgw.Close()
-	m.shield.Close()
-	close(resultQueue)
-	//m.Log(-2, "[-]Waiting ResultQueue Close")
-	resultWg.Wait()
-	//m.Log(-2, "[*]ResultQueue Closed")
 
 	return results, nil
 }
