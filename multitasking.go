@@ -67,6 +67,12 @@ func (m *Multitasking[TaskType, ResultType]) init(
 		ctx = context.Background()
 	}
 	m.ctx, m.cancel = context.WithCancel(ctx)
+
+	context.AfterFunc(m.ctx, func() {
+		m.terminating = true
+		m.resume()
+	})
+
 	m.shield = Shield.NewShield()
 	m.terminating = false
 
@@ -178,8 +184,6 @@ func (m *Multitasking[TaskType, ResultType]) ThreadsDetail() *status.ThreadsDeta
 }
 
 func (m *Multitasking[TaskType, ResultType]) Terminate() {
-	m.terminating = true
-	m.resume()
 	m.cancel()
 }
 
