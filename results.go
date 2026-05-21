@@ -30,8 +30,10 @@ func (nr NormalResult[TaskType, ResultType]) Data() ResultType {
 	return nr.data
 }
 
-type NullResult[TaskType any, ResultType any] struct{}
+type NullResult[TaskType any, ResultType any] struct {
+	rawTask Task[TaskType]
+}
 
 func (null NullResult[TaskType, ResultType]) RawTask() Task[TaskType] {
-	return Task[TaskType]{}
+	return null.rawTask
 }

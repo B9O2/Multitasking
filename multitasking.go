@@ -312,10 +312,8 @@ func (m *Multitasking[TaskType, ResultType]) startSchedulingGate(
 			<-m.pauseChan
 		}
 
-		if !m.terminating.Load() {
-			for task := range m.retryQueue.Out {
-				bufferQueue <- Task[TaskType]{true, task}
-			}
+		for task := range m.retryQueue.Out {
+			bufferQueue <- Task[TaskType]{true, task}
 		}
 	}, func(msg string) {
 		m.errCallback(m.dc, errors.New(msg))
@@ -385,6 +383,9 @@ func (m *Multitasking[TaskType, ResultType]) startExecution(
 					case NormalResult[TaskType, ResultType]:
 						rt.rawTask = task
 						res = rt
+					case NullResult[TaskType, ResultType]:
+						rt.rawTask = task
+						res = rt
 					}
 				}
 
@@ -431,6 +432,14 @@ func (m *Multitasking[TaskType, ResultType]) startResultCollector(
 					}, func(s string) {
 						m.errCallback(m.ec, errors.New(s))
 					}, m.terminateErrorIgnore)
+				}
+			} else if _, ok := ret.(NullResult[TaskType, ResultType]); ok {
+				if m.terminating.Load() {
+					if m.onTerminating != nil {
+						m.onTerminating(m.ec, ret.RawTask().data)
+					}
+					totalTaskWg.Done()
+					continue
 				}
 			}
 
