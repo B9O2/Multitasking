@@ -25,7 +25,8 @@ func TestWaiter(t *testing.T) {
 		fmt.Println("[*] 2Seconds OK")
 	}()
 
-	w.WaitAll(1)
+	w.Add(1)
+	w.WaitAll()
 	w.Close()
 	fmt.Println("Everything works.")
 }

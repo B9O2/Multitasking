@@ -126,7 +126,7 @@ func (bdc *BaseDistributeController[TaskType, ResultType]) AddTasks(
 }
 
 func (bdc *BaseDistributeController[TaskType, ResultType]) Terminate() {
-	bdc.mt.terminating = true
+	bdc.mt.Terminate()
 	panic("multitasking terminated")
 }
 
@@ -162,13 +162,7 @@ func (bec *BaseExecuteController[TaskType, ResultType]) Success(
 }
 
 func (bec *BaseExecuteController[TaskType, ResultType]) Terminate() {
-	defer func() {
-		if r := recover(); r != nil {
-		}
-	}()
-
-	bec.mt.terminating = true
-	TryClose(bec.mt.taskQueue)
+	bec.mt.Terminate()
 }
 
 func NewBaseExecuteController[TaskType any, ResultType any]() *BaseExecuteController[TaskType, ResultType] {
