@@ -3,7 +3,6 @@ package Multitasking
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -189,7 +188,6 @@ func (m *Multitasking[TaskType, ResultType]) ThreadsDetail() *status.ThreadsDeta
 }
 
 func (m *Multitasking[TaskType, ResultType]) Terminate() {
-	fmt.Printf("Core <%s> called Terminate().\n", m.name)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cancel != nil {
