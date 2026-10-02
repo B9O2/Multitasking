@@ -42,6 +42,7 @@ type DistributeController[TaskType any, ResultType any] interface {
 type ExecuteController[TaskType any, ResultType any] interface {
 	Controller[TaskType, ResultType]
 	Retry(...TaskType) Result[TaskType, ResultType]
+	AddTasks(...TaskType)
 	Success(ResultType) Result[TaskType, ResultType]
 	Null() Result[TaskType, ResultType]
 }
@@ -146,6 +147,25 @@ func (bec *BaseExecuteController[TaskType, ResultType]) Retry(
 ) Result[TaskType, ResultType] {
 	return RetryResult[TaskType, ResultType]{
 		tasks: tasks,
+	}
+}
+
+func (bec *BaseExecuteController[TaskType, ResultType]) AddTasks(
+	tasks ...TaskType,
+) {
+	if len(tasks) == 0 {
+		return
+	}
+	bec.mt.totalTaskWg.Add(len(tasks))
+	for _, task := range tasks {
+		if bec.mt.terminating.Load() {
+			if bec.mt.onTerminating != nil {
+				bec.mt.onTerminating(bec.mt.ec, task)
+			}
+			bec.mt.totalTaskWg.Done()
+			continue
+		}
+		bec.mt.retry(task)
 	}
 }
 

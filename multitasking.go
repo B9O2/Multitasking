@@ -39,6 +39,7 @@ type Multitasking[TaskType any, ResultType any] struct {
 	retryQueue  *PriorityQueue[TaskType]
 	ctx         context.Context
 	cancel      context.CancelFunc
+	totalTaskWg *sync.WaitGroup
 
 	//controller
 	dc DistributeController[TaskType, ResultType]
@@ -490,6 +491,7 @@ func (m *Multitasking[TaskType, ResultType]) Run(
 	bufferQueue := make(chan Task[TaskType])
 	resultQueue := make(chan Result[TaskType, ResultType])
 	totalTaskWg := &sync.WaitGroup{}
+	m.totalTaskWg = totalTaskWg
 	totalExecWg := &sync.WaitGroup{}
 	resultWg := &sync.WaitGroup{}
 
